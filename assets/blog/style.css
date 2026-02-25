@@ -1,0 +1,218 @@
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  line-height: 1.7;
+  color: #e4e4e7;
+  background-color: #0f0f13;
+  padding: 2rem 1rem;
+}
+
+.back-nav {
+  max-width: 780px;
+  margin: 0 auto 1.5rem;
+}
+
+.back-nav a {
+  color: #a78bfa;
+  text-decoration: none;
+  font-size: 0.95rem;
+  transition: color 0.2s;
+}
+
+.back-nav a:hover {
+  color: #c4b5fd;
+}
+
+.post {
+  max-width: 780px;
+  margin: 0 auto;
+}
+
+/* ---- Header ---- */
+.post-header {
+  margin-bottom: 2.5rem;
+  border-bottom: 1px solid #27272a;
+  padding-bottom: 1.5rem;
+}
+
+h1 {
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #fafafa;
+  margin-bottom: 0.5rem;
+}
+
+.post-meta {
+  font-size: 0.9rem;
+  color: #71717a;
+}
+
+/* ---- Lead paragraph ---- */
+.lead {
+  font-size: 1.125rem;
+  color: #a1a1aa;
+  margin-bottom: 2rem;
+}
+
+/* ---- Headings ---- */
+h2 {
+  font-size: 1.55rem;
+  font-weight: 600;
+  color: #fafafa;
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #1e1e24;
+}
+
+h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #d4d4d8;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+h4 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #a78bfa;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* ---- Body text ---- */
+p {
+  margin-bottom: 1rem;
+}
+
+strong {
+  color: #fafafa;
+  font-weight: 600;
+}
+
+em {
+  font-style: italic;
+  color: #c4b5fd;
+}
+
+/* ---- Lists ---- */
+ul,
+ol {
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+}
+
+li {
+  margin-bottom: 0.35rem;
+}
+
+li::marker {
+  color: #6d28d9;
+}
+
+/* ---- Inline code ---- */
+code {
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: 0.88em;
+  background: #1c1c24;
+  color: #c4b5fd;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+
+/* ---- Code blocks ---- */
+pre {
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  overflow-x: auto;
+  margin-bottom: 1.25rem;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: #d4d4d8;
+}
+
+/* ---- Flow diagram ---- */
+.flow-diagram {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #fafafa;
+}
+
+.flow-diagram .arrow {
+  color: #6d28d9;
+  font-size: 1.2rem;
+}
+
+.flow-diagram .flow-label {
+  color: #71717a;
+  font-weight: 400;
+  font-size: 0.85rem;
+}
+
+/* ---- Closing ---- */
+.closing {
+  margin-top: 1.5rem;
+  padding: 1rem 1.25rem;
+  background: #1c1c24;
+  border-left: 3px solid #7c3aed;
+  border-radius: 0 6px 6px 0;
+  font-size: 1.05rem;
+}
+
+/* ---- Scrollbar ---- */
+pre::-webkit-scrollbar {
+  height: 6px;
+}
+
+pre::-webkit-scrollbar-track {
+  background: #18181b;
+}
+
+pre::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 3px;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 600px) {
+  h1 {
+    font-size: 1.65rem;
+  }
+
+  h2 {
+    font-size: 1.3rem;
+  }
+
+  pre {
+    padding: 1rem;
+  }
+
+  .flow-diagram {
+    font-size: 0.85rem;
+  }
+}

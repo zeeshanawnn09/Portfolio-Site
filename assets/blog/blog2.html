@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Switching to Unity's New Input System in a Multiplayer Game</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <nav class="back-nav">
+    <a href="../../index.html">← Back to Portfolio</a>
+  </nav>
+  <article class="post">
+    <header class="post-header">
+      <h1>Switching to Unity's New Input System in a Multiplayer Game</h1>
+      <p class="post-meta">February 25, 2026</p>
+    </header>
+
+    <p class="lead">
+      Unity's old <strong>Input Manager</strong> — <code>Input.GetAxis()</code>, <code>Input.GetKey()</code> —
+      gets the job done, but it doesn't scale well when you have multiple players, want gamepad support,
+      or need clean separation between input reading and game logic. Here's how I migrated
+      <em>Multiplayer GP Hunt</em> to the new <strong>Input System</strong> package, and what my
+      <code>PlayerControls</code> script looks like today.
+    </p>
+
+    <h2>The Problem with the Old Approach</h2>
+    <p>
+      The legacy Input Manager reads raw input directly inside <code>Update()</code> — fine for a solo
+      project, but it introduces a few headaches in a networked multiplayer game:
+    </p>
+    <ul>
+      <li>Every player object polls <code>Input.GetAxis</code> every frame, even remote players that shouldn't be reading local input at all.</li>
+      <li>Adding gamepad support means rewriting input calls rather than remapping an action.</li>
+      <li>There's no built-in way to rebind controls at runtime without rolling your own system.</li>
+      <li>Input and movement logic are tangled together, making both harder to test and maintain.</li>
+    </ul>
+    <p>
+      With Photon PUN 2 already in the project, the last thing I wanted was every remote player
+      instance accidentally reading the local keyboard and teleporting around. A cleaner input layer
+      would also make it trivial to disable input for remote players entirely.
+    </p>
+
+    <h2>Installing the New Input System</h2>
+    <p>
+      The new Input System is a separate package — it doesn't replace the legacy system automatically.
+      To install it:
+    </p>
+    <ol>
+      <li>Open <strong>Window → Package Manager</strong></li>
+      <li>Search for <strong>"Input System"</strong> and install it (Unity Technologies)</li>
+      <li>Unity will prompt you to enable the new backends and restart — click <strong>Yes</strong></li>
+      <li>In <strong>Edit → Project Settings → Player → Other Settings</strong>, set
+          <strong>Active Input Handling</strong> to <em>Input System Package (New)</em> or
+          <em>Both</em> if you need legacy support temporarily</li>
+    </ol>
+    <p>
+      You'll also want to make sure your <strong>API Compatibility Level</strong> is set to
+      <strong>.NET Framework</strong> (not .NET Standard 2.1) under
+      <strong>Edit → Project Settings → Player → Other Settings</strong>, otherwise some
+      Input System features won't compile correctly.
+    </p>
+
+    <h2>Creating the Input Actions Asset</h2>
+    <p>
+      Rather than hardcoding key bindings, the new system uses an <strong>Input Actions asset</strong>
+      — a visual editor where you define actions and their bindings separately from your code.
+    </p>
+    <ol>
+      <li>Right-click in the Project window → <strong>Create → Input Actions</strong></li>
+      <li>Name it <code>InputSystem_Actions</code></li>
+      <li>Double-click to open the editor and create an <strong>Action Map</strong> called <code>Player</code></li>
+      <li>Add two actions inside it:
+        <ul>
+          <li><strong>Move</strong> — set to <em>Value / Vector2</em>, bind to WASD and left stick</li>
+          <li><strong>Look</strong> — set to <em>Value / Vector2</em>, bind to mouse delta and right stick</li>
+        </ul>
+      </li>
+      <li>Tick <strong>"Generate C# Class"</strong> in the asset's Inspector and hit Apply — this
+          creates the <code>InputSystem_Actions</code> class used directly in the script</li>
+    </ol>
+
+    <h2>The PlayerControls Script</h2>
+    <p>
+      With the asset generated, the actual input reading in <code>PlayerControls.cs</code> becomes
+      event-driven rather than polled. Here's the full implementation:
+    </p>
+
+    <h3>Setup &amp; Initialization</h3>
+    <pre><code class="language-csharp">InputSystem_Actions inputActions;
+Vector2 moveInput;
+Vector2 lookInput;
+
+private void Awake()
+{
+    inputActions = new InputSystem_Actions();
+
+    inputActions.Player.Move.performed += ctx => moveInput = ctx.ReadValue&lt;Vector2&gt;();
+    inputActions.Player.Move.canceled  += _ => moveInput = Vector2.zero;
+
+    inputActions.Player.Look.performed += ctx => lookInput = ctx.ReadValue&lt;Vector2&gt;();
+    inputActions.Player.Look.canceled  += _ => lookInput = Vector2.zero;
+
+    DontDestroyOnLoad(this.gameObject);
+}</code></pre>
+
+    <p>Key decisions here:</p>
+    <ul>
+      <li><strong>Event callbacks instead of polling</strong> — <code>performed</code> fires when input starts or changes, <code>canceled</code> fires when the button or stick is released. This means <code>moveInput</code> is always up to date without touching <code>Update()</code>.</li>
+      <li><strong><code>DontDestroyOnLoad</code></strong> — the player object persists across scene transitions (lobby → gameplay), so the input actions need to persist with it.</li>
+      <li>The ownership transfer comment in the code is intentional — Photon spawns objects before assigning ownership, so <code>localPlayerInstance</code> is set in a delayed <code>FinishInvoke</code> call rather than in <code>Awake</code>.</li>
+    </ul>
+
+    <h3>Enabling &amp; Disabling Cleanly</h3>
+    <pre><code class="language-csharp">private void OnEnable()
+{
+    if (inputActions != null)
+        inputActions.Enable();
+}
+
+private void OnDisable()
+{
+    if (inputActions != null)
+        inputActions.Disable();
+}</code></pre>
+
+    <p>
+      This is the correct pattern for managing Input System lifetime. Always enable and disable
+      your actions alongside the MonoBehaviour — failing to call <code>Disable()</code> on
+      destroy is a common source of memory leaks and ghost input callbacks on remote players.
+    </p>
+
+    <h3>Movement &amp; Camera</h3>
+    <pre><code class="language-csharp">void Update()
+{
+    if (photonView.IsMine)
+    {
+        ProcessMovement();
+        ProcessTurn();
+    }
+}
+
+void ProcessMovement()
+{
+    Vector3 moveVector = transform.forward * moveInput.y
+                       + transform.right   * moveInput.x;
+    controller.Move(moveVector * moveSpeed * Time.deltaTime);
+}
+
+void ProcessTurn()
+{
+    float xInput = lookInput.x * turnSpeed   * Time.deltaTime;
+    float yInput = lookInput.y * cameraSpeed * Time.deltaTime;
+
+    transform.Rotate(0, xInput, 0);
+    camObject.transform.Rotate(-yInput, 0, 0);
+}</code></pre>
+
+    <p>
+      Notice that <code>ProcessMovement</code> and <code>ProcessTurn</code> don't touch the Input
+      System at all — they just consume the cached <code>moveInput</code> and <code>lookInput</code>
+      vectors. The <code>photonView.IsMine</code> guard means remote player instances skip both
+      methods entirely, so there's zero risk of the local keyboard affecting another player's character.
+    </p>
+
+    <h2>Old vs New — A Direct Comparison</h2>
+    <div class="flow-diagram">
+      <span>Legacy: <code>Input.GetAxis("Horizontal")</code> in Update every frame</span>
+      <span class="arrow">→</span>
+      <span class="flow-label">polls regardless of ownership, no rebinding, keyboard only</span>
+    </div>
+    <div class="flow-diagram">
+      <span>New: <code>performed</code> callback stores value once</span>
+      <span class="arrow">→</span>
+      <span class="flow-label">event-driven, rebindable, keyboard + gamepad automatically</span>
+    </div>
+
+    <h2>Why This Matters for Multiplayer</h2>
+    <p>
+      The <code>photonView.IsMine</code> check was already protecting remote players from being
+      moved by local input, but the old approach still instantiated input reads on every object.
+      With the new system, input actions are disabled entirely when the MonoBehaviour is disabled —
+      if you ever pool or disable remote player objects, their input subscriptions clean up automatically
+      through <code>OnDisable</code>. This is much safer in a networked context.
+    </p>
+    <p>
+      It also means adding gamepad support later requires zero code changes. Because <code>Move</code>
+      and <code>Look</code> are abstract <em>actions</em> rather than specific key references, adding
+      a left-stick binding in the Input Actions asset is all that's needed — the
+      <code>PlayerControls</code> script doesn't need to know or care where the input came from.
+    </p>
+
+    <h2>The Updated Game Flow</h2>
+    <div class="flow-diagram">
+      <span>Input Actions Asset</span>
+      <span class="arrow">→</span>
+      <span class="flow-label">(defines Move &amp; Look)</span>
+      <span class="arrow">→</span>
+      <span>PlayerControls.Awake</span>
+      <span class="arrow">→</span>
+      <span class="flow-label">(subscribes callbacks)</span>
+      <span class="arrow">→</span>
+      <span>ProcessMovement / ProcessTurn</span>
+    </div>
+    <ol>
+      <li>The Input Actions asset defines what <strong>Move</strong> and <strong>Look</strong> mean — agnostic of device.</li>
+      <li><code>Awake</code> wires up event callbacks that cache the latest input values into <code>moveInput</code> and <code>lookInput</code>.</li>
+      <li><code>Update</code> consumes those cached values, but only if <code>photonView.IsMine</code> — keeping remote players fully isolated.</li>
+      <li><code>OnDisable</code> cleanly unsubscribes everything, preventing ghost callbacks across scene loads.</li>
+    </ol>
+
+    <h2>What's Next</h2>
+    <ul>
+      <li><strong>Runtime rebinding</strong> — the new Input System has a built-in rebinding API. A simple settings screen could let players remap controls without any custom key-capture logic.</li>
+      <li><strong>Gamepad support</strong> — already halfway there. Adding left/right stick bindings to the existing <code>Move</code> and <code>Look</code> actions in the asset editor is all that's needed.</li>
+      <li><strong>Input disabling during UI</strong> — switching action maps (e.g. from <code>Player</code> to <code>UI</code>) when a menu is open is cleaner than manually nulling input vectors.</li>
+      <li><strong>Mobile touch input</strong> — the Input System's on-screen controls package slots directly into the same action map, making a mobile build a realistic future target.</li>
+    </ul>
+
+    <h2>Takeaway</h2>
+    <p>
+      The new Input System has a steeper initial setup than <code>Input.GetAxis</code>, but the
+      event-driven model pays off immediately in a multiplayer context — input is clean, ownership-aware,
+      and device-agnostic by design. The generated C# class from the Input Actions asset means there
+      are no magic strings in the codebase, and refactoring a binding is a two-second change in the
+      visual editor rather than a grep-and-replace across scripts.
+    </p>
+    <p class="closing">
+      If you're already using Photon PUN 2, migrating to the new Input System is one of the
+      highest-value refactors you can make early in a multiplayer project — <strong>do it before
+      your input logic spreads across ten different scripts.</strong>
+    </p>
+  </article>
+</body>
+</html>

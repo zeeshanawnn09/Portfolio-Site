@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Adding Player Authentication to a Unity Multiplayer Game with PlayFab</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <nav class="back-nav">
+    <a href="../../index.html">← Back to Portfolio</a>
+  </nav>
+  <article class="post">
+    <header class="post-header">
+      <h1>Adding Player Authentication to a Unity Multiplayer Game with PlayFab</h1>
+      <p class="post-meta">February 24, 2026</p>
+    </header>
+
+    <p class="lead">
+      When building a multiplayer game, you eventually hit the point where you need real accounts —
+      not just anonymous connections, but proper sign-up, login, and password recovery. Today I wired
+      up <strong>PlayFab</strong> as the authentication backend for my Unity multiplayer project
+      (which already uses <strong>Photon PUN 2</strong> for real-time networking), and here's how it went.
+    </p>
+
+    <h2>The Problem</h2>
+    <p>
+      My game, <em>Multiplayer GP Hunt</em>, already had a working lobby and gameplay flow powered by
+      Photon. Players could browse rooms, create rooms, and jump into a networked scene. But there was
+      no identity layer — anyone could connect without an account. I needed:
+    </p>
+    <ul>
+      <li><strong>User registration</strong> with email, username, and password</li>
+      <li><strong>Login</strong> with email and password</li>
+      <li><strong>Password reset</strong> via email recovery</li>
+    </ul>
+
+    <h2>Why PlayFab?</h2>
+    <p>
+      PlayFab (part of Microsoft Azure) provides a free-tier backend-as-a-service designed for games.
+      It handles player authentication, data storage, leaderboards, and more — without requiring me to
+      spin up a custom server. For a Unity project, its C# SDK drops right in.
+    </p>
+
+    <h2>Setting It Up</h2>
+
+    <h3>1. Installing the PlayFab SDK</h3>
+    <p>
+      I added the PlayFab SDK into <code>Assets/Plugins/PlayFabSDK/</code>. The SDK comes with editor
+      extensions (<code>PlayFabEditorExtensions</code>) that make it easy to configure your Title ID
+      directly in Unity. My Title ID is configured in <code>PlayFabSharedSettings.asset</code>, and
+      from there the SDK handles all the API plumbing.
+    </p>
+
+    <h3>2. Building the Login &amp; Register Scene</h3>
+    <p>
+      I created a new scene — <code>Login&amp;Register.unity</code> — which acts as the entry point
+      for the game. The scene contains a simple UI built with <strong>TextMeshPro</strong> input fields:
+    </p>
+    <ul>
+      <li><strong>Email</strong> input</li>
+      <li><strong>Password</strong> input</li>
+      <li><strong>Username</strong> input (for registration)</li>
+      <li>Buttons for <strong>Register</strong>, <strong>Login</strong>, and <strong>Forgot Password</strong></li>
+    </ul>
+    <p>
+      This scene sits at the very start of the game flow, before the player ever touches the
+      Photon-powered lobby.
+    </p>
+
+    <h3>3. The PlayFabManager Script</h3>
+    <p>
+      The core of the implementation is a single <code>PlayFabManager</code> MonoBehaviour that handles
+      all three authentication flows:
+    </p>
+
+    <h4>Registration</h4>
+    <pre><code class="language-csharp">public void UserRegister()
+{
+    if (passwordInput.text.Length &lt; 8)
+    {
+        Debug.LogError("Password must be at least 8 characters long.");
+        return;
+    }
+    var request = new RegisterPlayFabUserRequest
+    {
+        Email = emailInput.text,
+        Password = passwordInput.text,
+        Username = usernameInput.text,
+        RequireBothUsernameAndEmail = true
+    };
+
+    PlayFabClientAPI.RegisterPlayFabUser(request, OnRegisterSuccess, OnRegisterFailure);
+}</code></pre>
+
+    <p>Key decisions:</p>
+    <ul>
+      <li><strong>Client-side password validation</strong> — PlayFab enforces a minimum of 6 characters, but I opted for 8 as a reasonable baseline.</li>
+      <li><strong>RequireBothUsernameAndEmail</strong> is set to <code>true</code> so players have a display name from day one.</li>
+      <li>On success, the player is sent straight to the <code>LobbyScene</code>.</li>
+    </ul>
+
+    <h4>Login</h4>
+    <pre><code class="language-csharp">public void UserLogin()
+{
+    var request = new LoginWithEmailAddressRequest
+    {
+        Email = emailInput.text,
+        Password = passwordInput.text,
+    };
+
+    PlayFabClientAPI.LoginWithEmailAddress(request, OnLoginSuccess, OnLoginFailure);
+}</code></pre>
+    <p>
+      Simple and clean — email + password. On success, PlayFab returns a <code>PlayFabId</code> which
+      uniquely identifies the player, and we transition to the lobby.
+    </p>
+
+    <h4>Password Reset</h4>
+    <pre><code class="language-csharp">public void ResetPassword()
+{
+    var request = new SendAccountRecoveryEmailRequest
+    {
+        Email = emailInput.text,
+        TitleId = "65710"
+    };
+
+    PlayFabClientAPI.SendAccountRecoveryEmail(request, OnPasswordResetSuccess, OnPasswordResetFailure);
+}</code></pre>
+    <p>
+      This fires off a recovery email through PlayFab's built-in email service. The player receives a
+      link to reset their password — no custom email infrastructure needed.
+    </p>
+
+    <h2>The Updated Game Flow</h2>
+    <div class="flow-diagram">
+      <span>Login &amp; Register</span>
+      <span class="arrow">→</span>
+      <span class="flow-label">(PlayFab auth)</span>
+      <span class="arrow">→</span>
+      <span>Lobby Scene</span>
+      <span class="arrow">→</span>
+      <span class="flow-label">(Photon join/create room)</span>
+      <span class="arrow">→</span>
+      <span>Gameplay Scene</span>
+    </div>
+    <ol>
+      <li>Player opens the game and lands on the <strong>Login &amp; Register</strong> screen.</li>
+      <li>They either create a new account or log in with existing credentials.</li>
+      <li>On successful authentication, they're taken to the <strong>Lobby Scene</strong> where Photon connects them to the multiplayer lobby.</li>
+      <li>From there, they can create or join rooms, which loads the <strong>Gameplay Scene</strong>.</li>
+    </ol>
+
+    <h2>Project Restructuring</h2>
+    <p>
+      While I was at it, I also reorganized the codebase. Scripts moved from flat directories into a
+      cleaner hierarchy:
+    </p>
+    <ul>
+      <li><code>Assets/Scripts/PlayFab/</code> — authentication logic</li>
+      <li><code>Assets/Scripts/Core/Gameplay/</code> — player controls and gameplay mechanics</li>
+      <li><code>Assets/Scripts/Multiplayer/</code> — Photon networking (room controller, etc.)</li>
+    </ul>
+    <p>This keeps PlayFab, gameplay, and networking concerns separated as the project grows.</p>
+
+    <h2>What's Next</h2>
+    <ul>
+      <li><strong>UI feedback</strong> — right now errors only go to <code>Debug.Log</code>. Next step is surfacing error messages (e.g. "email already taken", "wrong password") in the UI.</li>
+      <li><strong>Session persistence</strong> — storing the auth token so players don't have to log in every time they launch the game.</li>
+      <li><strong>Linking PlayFab identity to Photon</strong> — using the PlayFab username as the Photon nickname so other players see real names in the lobby.</li>
+      <li><strong>Input validation</strong> — email format checking, confirm-password field, loading spinners during API calls.</li>
+    </ul>
+
+    <h2>Takeaway</h2>
+    <p>
+      PlayFab makes it remarkably easy to add authentication to a Unity game. The C# SDK mirrors the
+      REST API closely, and the async callback pattern (<code>OnSuccess</code> / <code>OnFailure</code>)
+      fits naturally into Unity's event-driven architecture. Combined with Photon for networking, you
+      get a full multiplayer stack without managing any servers.
+    </p>
+    <p class="closing">
+      Total time from "no auth" to "working registration, login, and password reset": <strong>one session</strong>.
+    </p>
+  </article>
+</body>
+</html>
