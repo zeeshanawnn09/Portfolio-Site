@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Building an RPC-Centric Role System in Unity with PUN 2</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <nav class="back-nav">
+    <a href="../../index.html">← Back to Portfolio</a>
+  </nav>
+  <article class="post">
+    <header class="post-header">
+      <h1>Building an RPC-Centric Role System in Unity with PUN 2</h1>
+      <p class="post-meta">February 26, 2026</p>
+    </header>
+
+    <p class="lead">
+      In multiplayer games, <strong>synchronization is everything</strong>. When assigning secret roles like
+      <em>Ghost</em> and <em>Priest</em>, you must ensure all players receive the same result, the assignment happens only once,
+      late joiners stay in sync, and the system is secure from duplication. In this post, we'll break down an
+      <strong>RPC-centric implementation</strong> using <strong>Photon Unity Networking (PUN 2)</strong>.
+    </p>
+
+<p>
+In multiplayer games, <strong>synchronization is everything</strong>. When assigning secret roles like 
+<em>Ghost</em> and <em>Priest</em>, you must ensure:
+</p>
+
+<ul>
+    <li>✔ All players receive the same result</li>
+    <li>✔ The assignment happens only once</li>
+    <li>✔ Late joiners stay in sync</li>
+    <li>✔ The system is secure from duplication</li>
+</ul>
+
+<p>
+In this post, we’ll break down an <strong>RPC-centric implementation</strong> using 
+<strong>Photon Unity Networking (PUN 2)</strong> and explain:
+</p>
+
+<ul>
+    <li>Why RPCs were used</li>
+    <li>How they were implemented</li>
+    <li>What benefits they provide</li>
+    <li>When this approach is ideal</li>
+</ul>
+
+<hr>
+
+<h2>🧠 Why Go RPC-Centric?</h2>
+
+<p>Photon offers multiple synchronization methods:</p>
+
+<table border="1" cellpadding="8" cellspacing="0">
+    <tr>
+        <th>Method</th>
+        <th>Good For</th>
+    </tr>
+    <tr>
+        <td>Custom Properties</td>
+        <td>Persistent data</td>
+    </tr>
+    <tr>
+        <td>RaiseEvent</td>
+        <td>Lightweight event broadcasting</td>
+    </tr>
+    <tr>
+        <td>RPC</td>
+        <td>Direct object-bound execution</td>
+    </tr>
+</table>
+
+<p>
+In this system, RPCs were chosen because:
+</p>
+
+<ul>
+    <li>Roles must trigger behavior on a specific player object</li>
+    <li>Assignment should execute immediately</li>
+    <li>Late joiners must receive the role</li>
+    <li>Logic stays tightly coupled (role → character behavior)</li>
+</ul>
+
+<hr>
+
+<h2>👑 Master Client Authority</h2>
+
+<pre><code>if (!PhotonNetwork.IsMasterClient)
+    return;
+</code></pre>
+
+<p>
+Only the Master Client assigns roles. If every client shuffled locally,
+you would get desynchronization issues. Master authority ensures:
+</p>
+
+<ul>
+    <li>✔ Only one shuffle happens</li>
+    <li>✔ Only one role list exists</li>
+    <li>✔ Everyone receives identical results</li>
+</ul>
+
+<hr>
+
+<h2>🎲 Role Pool Creation + Shuffle</h2>
+
+<pre><code>List&lt;PlayerRole&gt; roles = new List&lt;PlayerRole&gt;();
+
+for (int i = 0; i &lt; PRIEST_COUNT; i++)
+{
+    roles.Add(PlayerRole.Priest);
+}
+roles.Add(PlayerRole.Ghost);
+</code></pre>
+
+<p>Then apply a Fisher-Yates shuffle:</p>
+
+<pre><code>for (int i = roles.Count - 1; i &gt; 0; i--)
+{
+    int randomIndex = Random.Range(0, i + 1);
+
+    PlayerRole temp = roles[i];
+    roles[i] = roles[randomIndex];
+    roles[randomIndex] = temp;
+}
+</code></pre>
+
+<p>
+This approach is scalable and prevents duplicate role assignment.
+</p>
+
+<hr>
+
+<h2>🌐 RPC Role Distribution</h2>
+
+<pre><code>pControl.photonView.RPC(
+    "AssignPlayerRole",
+    RpcTarget.AllBuffered,
+    (int)role
+);
+</code></pre>
+
+<h3>Why <code>RpcTarget.AllBuffered</code>?</h3>
+
+<ul>
+    <li><strong>All</strong> → Executes on every connected client</li>
+    <li><strong>Buffered</strong> → Stores call for late joiners</li>
+</ul>
+
+<p>
+Without buffering, reconnecting players would not receive a role.
+</p>
+
+<hr>
+
+<h2>🎮 Player Role Execution</h2>
+
+<pre><code>[PunRPC]
+void AssignPlayerRole(int roleIndex)
+{
+    PlayerRole role = (PlayerRole)roleIndex;
+
+    if (role == PlayerRole.Ghost)
+    {
+        BecomeGhost();
+    }
+    else
+    {
+        BecomePriest();
+    }
+}
+</code></pre>
+
+<p>
+By attaching the RPC to the player object, the role logic stays clean and modular.
+</p>
+
+<hr>
+
+<h2>🔥 Benefits of an RPC-Centric Architecture</h2>
+
+<h3>1️⃣ Strong Authority Model</h3>
+<p>Only the Master assigns roles, preventing duplication.</p>
+
+<h3>2️⃣ Automatic Late Join Sync</h3>
+<p>Buffered RPCs replay automatically.</p>
+
+<h3>3️⃣ Clean Separation of Concerns</h3>
+<ul>
+    <li><strong>RoomController</strong> → Game flow</li>
+    <li><strong>PlayerControls</strong> → Character behavior</li>
+</ul>
+
+<h3>4️⃣ Event-Driven Execution</h3>
+<p>
+No need for polling or update checks. The event executes instantly.
+</p>
+
+<h3>5️⃣ Scalable Design</h3>
+<p>
+Want multiple ghosts? Special roles? Just change role list creation.
+RPC distribution logic stays identical.
+</p>
+
+<hr>
+
+<h2>⚠ Multiplayer Safety Considerations</h2>
+
+<h3>Prevent Double Assignment</h3>
+
+<pre><code>private bool rolesAssigned = false;
+</code></pre>
+
+<p>
+Prevents duplicate shuffles and inconsistent state.
+</p>
+
+<h3>Handle Master Client Switch</h3>
+
+<pre><code>public override void OnMasterClientSwitched(Player newMasterClient)
+{
+    // Optional: Re-validate state
+}
+</code></pre>
+
+<hr>
+
+<h2>🏁 Final Multiplayer Flow</h2>
+
+<ol>
+    <li>Master loads room</li>
+    <li>Players join</li>
+    <li>Characters spawn</li>
+    <li>When 4 players present:
+        <ul>
+            <li>Create role list</li>
+            <li>Shuffle roles</li>
+            <li>Send buffered RPCs</li>
+        </ul>
+    </li>
+    <li>Players execute role logic locally</li>
+    <li>Late joiners receive buffered calls</li>
+</ol>
+
+<hr>
+
+<h2>💡 When Should You Use RPC-Centric Design?</h2>
+
+<h3>Use RPC when:</h3>
+<ul>
+    <li>✔ The action is event-based</li>
+    <li>✔ Immediate execution is required</li>
+    <li>✔ Logic belongs to a specific object</li>
+    <li>✔ Late join replay is necessary</li>
+</ul>
+
+<h3>Avoid RPC when:</h3>
+<ul>
+    <li>Persistent long-term data is required</li>
+    <li>Server-side validation is needed</li>
+    <li>High-frequency event spam occurs</li>
+</ul>
+
+<hr>
+
+<h2>🎯 Final Thoughts</h2>
+
+<p>
+This RPC-centric implementation provides a clean, scalable, and multiplayer-safe
+architecture built around one simple principle:
+</p>
+
+<blockquote>
+One authority decides.<br>
+RPC distributes.<br>
+Objects react locally.
+</blockquote>
+
+<p>
+That’s solid multiplayer engineering.
+</p>
+
+</body>
+</html>
