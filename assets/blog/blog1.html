@@ -1,715 +1,509 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Adding Player Authentication to a Unity Multiplayer Game with PlayFab</title>
+<title>01 PlayFabManager, Login Scene, and Identity Gate | Multiplayer GP Hunt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0a0d12;
-    --bg2: #0f1318;
-    --bg3: #141920;
-    --border: #1e2530;
-    --accent: #00c8ff;
-    --accent2: #ff6b35;
-    --accent3: #7fff6b;
-    --text: #d4dce8;
-    --text-muted: #5a6a7e;
-    --text-dim: #8a9ab0;
-    --heading: #eef2f8;
-    --code-bg: #0d1117;
-    --code-border: #1e2d3d;
-    --tip-bg: #0a1a24;
-    --warn-bg: #1a0f0a;
-  }
+	:root {
+		--bg: #0a0d12;
+		--bg2: #0f1318;
+		--bg3: #141920;
+		--border: #1e2530;
+		--accent: #00c8ff;
+		--accent2: #ff6b35;
+		--accent3: #7fff6b;
+		--text: #d4dce8;
+		--text-muted: #5a6a7e;
+		--text-dim: #8a9ab0;
+		--heading: #eef2f8;
+		--code-bg: #0d1117;
+		--code-border: #1e2d3d;
+		--tip-bg: #0a1a24;
+		--warn-bg: #1a0f0a;
+		--ok-bg: #0a1a0d;
+	}
 
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+	* { margin: 0; padding: 0; box-sizing: border-box; }
+	html { scroll-behavior: smooth; }
 
-  html { scroll-behavior: smooth; }
+	body {
+		background: var(--bg);
+		color: var(--text);
+		font-family: 'Lora', Georgia, serif;
+		font-size: 17px;
+		line-height: 1.8;
+		overflow-x: hidden;
+	}
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Lora', Georgia, serif;
-    font-size: 17px;
-    line-height: 1.8;
-    overflow-x: hidden;
-  }
+	body::before {
+		content: '';
+		position: fixed;
+		inset: 0;
+		background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+		pointer-events: none;
+		z-index: 0;
+		opacity: 0.4;
+	}
 
-  /* ── NOISE OVERLAY ── */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-    pointer-events: none;
-    z-index: 0;
-    opacity: 0.4;
-  }
+	body::after {
+		content: '';
+		position: fixed;
+		inset: 0;
+		background-image:
+			linear-gradient(rgba(0,200,255,0.025) 1px, transparent 1px),
+			linear-gradient(90deg, rgba(0,200,255,0.025) 1px, transparent 1px);
+		background-size: 60px 60px;
+		pointer-events: none;
+		z-index: 0;
+	}
 
-  /* ── GRID BACKGROUND ── */
-  body::after {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(0,200,255,0.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,200,255,0.025) 1px, transparent 1px);
-    background-size: 60px 60px;
-    pointer-events: none;
-    z-index: 0;
-  }
+	.reading-bar {
+		position: fixed;
+		top: 0;
+		left: 0;
+		height: 3px;
+		background: linear-gradient(90deg, var(--accent), var(--accent2));
+		z-index: 100;
+		width: 0%;
+		transition: width 0.1s linear;
+		box-shadow: 0 0 12px var(--accent);
+	}
 
-  /* ── LAYOUT ── */
-  .page-wrap {
-    position: relative;
-    z-index: 1;
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 0 24px;
-  }
+	.page-wrap {
+		position: relative;
+		z-index: 1;
+		max-width: 1020px;
+		margin: 0 auto;
+		padding: 0 24px;
+	}
 
-  /* ── HERO ── */
-  .hero {
-    padding: 80px 0 60px;
-    border-bottom: 1px solid var(--border);
-    animation: fadeUp 0.8s ease both;
-  }
+	.hero {
+		padding: 76px 0 48px;
+		border-bottom: 1px solid var(--border);
+		animation: fadeUp 0.8s ease both;
+	}
 
-  .hero-tags {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-bottom: 28px;
-  }
+	.hero-tags {
+		display: flex;
+		gap: 10px;
+		flex-wrap: wrap;
+		margin-bottom: 22px;
+	}
 
-  .tag {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    padding: 4px 10px;
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    border-radius: 2px;
-  }
+	.tag {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		padding: 4px 10px;
+		border: 1px solid var(--border);
+		color: var(--text-muted);
+		border-radius: 2px;
+	}
 
-  .tag.accent { border-color: var(--accent); color: var(--accent); }
+	.tag.accent { border-color: var(--accent); color: var(--accent); }
 
-  .hero h1 {
-    font-family: 'Syne', sans-serif;
-    font-size: clamp(32px, 6vw, 54px);
-    font-weight: 800;
-    color: var(--heading);
-    line-height: 1.1;
-    letter-spacing: -0.02em;
-    margin-bottom: 12px;
-  }
+	.hero h1 {
+		font-family: 'Syne', sans-serif;
+		font-size: clamp(30px, 5.4vw, 52px);
+		font-weight: 800;
+		color: var(--heading);
+		line-height: 1.08;
+		letter-spacing: -0.02em;
+		margin-bottom: 12px;
+	}
 
-  .hero h1 span {
-    color: var(--accent);
-    display: block;
-  }
+	.hero h1 span { color: var(--accent); display: block; }
 
-  .hero-sub {
-    font-size: 19px;
-    color: var(--text-dim);
-    font-style: italic;
-    margin-bottom: 32px;
-    font-family: 'Lora', serif;
-  }
+	.hero-sub {
+		font-size: 19px;
+		color: var(--text-dim);
+		font-style: italic;
+		margin-bottom: 20px;
+	}
 
-  .hero-meta {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
+	.hero-meta {
+		display: flex;
+		gap: 18px;
+		flex-wrap: wrap;
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 12px;
+		color: var(--text-muted);
+	}
 
-  .hero-meta .dot { color: var(--border); }
+	.toc {
+		margin: 40px 0;
+		padding: 24px 28px;
+		background: var(--bg2);
+		border: 1px solid var(--border);
+		border-left: 3px solid var(--accent);
+		animation: fadeUp 0.8s 0.1s ease both;
+	}
 
-  .reading-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
-    z-index: 100;
-    width: 0%;
-    transition: width 0.1s linear;
-    box-shadow: 0 0 12px var(--accent);
-  }
+	.toc-title {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		letter-spacing: 0.15em;
+		text-transform: uppercase;
+		color: var(--accent);
+		margin-bottom: 14px;
+	}
 
-  /* ── TOC ── */
-  .toc {
-    margin: 48px 0;
-    padding: 28px 32px;
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
-    animation: fadeUp 0.8s 0.1s ease both;
-  }
+	.toc ol { list-style: none; counter-reset: toc; }
+	.toc li {
+		counter-increment: toc;
+		padding: 6px 0;
+		border-bottom: 1px solid var(--border);
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+	}
+	.toc li:last-child { border-bottom: none; }
+	.toc li::before {
+		content: counter(toc, decimal-leading-zero);
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		color: var(--text-muted);
+		flex-shrink: 0;
+	}
 
-  .toc-title {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 16px;
-  }
+	.toc a {
+		color: var(--text-dim);
+		text-decoration: none;
+		font-size: 15px;
+		font-family: 'Syne', sans-serif;
+		font-weight: 600;
+		transition: color 0.2s;
+	}
 
-  .toc ol {
-    list-style: none;
-    counter-reset: toc;
-  }
+	.toc a:hover { color: var(--accent); }
 
-  .toc li {
-    counter-increment: toc;
-    padding: 5px 0;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-  }
+	.article { padding: 20px 0 80px; }
+	.post {
+		margin-bottom: 56px;
+		padding: 26px;
+		background: var(--bg2);
+		border: 1px solid var(--border);
+		animation: fadeUp 0.8s ease both;
+	}
 
-  .toc li:last-child { border-bottom: none; }
+	h2 {
+		font-family: 'Syne', sans-serif;
+		font-size: 28px;
+		font-weight: 800;
+		color: var(--heading);
+		margin-bottom: 12px;
+		padding-bottom: 10px;
+		border-bottom: 1px solid var(--border);
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
 
-  .toc li::before {
-    content: counter(toc, decimal-leading-zero);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-muted);
-    flex-shrink: 0;
-  }
+	h2 .h-num {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 13px;
+		color: var(--accent);
+		opacity: 0.8;
+		font-weight: 400;
+	}
 
-  .toc a {
-    color: var(--text-dim);
-    text-decoration: none;
-    font-size: 15px;
-    transition: color 0.2s;
-    font-family: 'Syne', sans-serif;
-    font-weight: 600;
-  }
+	h3 {
+		font-family: 'Syne', sans-serif;
+		font-size: 18px;
+		font-weight: 700;
+		color: var(--accent2);
+		margin: 24px 0 8px;
+	}
 
-  .toc a:hover { color: var(--accent); }
+	h4 {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--accent);
+		margin-bottom: 8px;
+	}
 
-  /* ── ARTICLE BODY ── */
-  .article {
-    padding: 48px 0 80px;
-    animation: fadeUp 0.8s 0.2s ease both;
-  }
+	p { margin-bottom: 14px; }
+	strong { color: var(--heading); font-weight: 600; }
 
-  .section {
-    margin-bottom: 64px;
-  }
+	.meta {
+		font-family: 'JetBrains Mono', monospace;
+		color: var(--text-muted);
+		font-size: 12px;
+		margin-bottom: 18px;
+	}
 
-  h2 {
-    font-family: 'Syne', sans-serif;
-    font-size: 28px;
-    font-weight: 800;
-    color: var(--heading);
-    margin-bottom: 20px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
+	.star-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 12px;
+		margin: 16px 0 10px;
+	}
 
-  h2 .h-num {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    color: var(--accent);
-    font-weight: 400;
-    opacity: 0.7;
-  }
+	.star-card {
+		border: 1px solid var(--border);
+		background: var(--bg3);
+		padding: 12px;
+	}
 
-  h3 {
-    font-family: 'Syne', sans-serif;
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--accent2);
-    margin: 28px 0 10px;
-    letter-spacing: 0.01em;
-  }
+	.feature-block {
+		margin: 16px 0;
+		border-left: 3px solid var(--accent2);
+		background: rgba(255,107,53,0.06);
+		border-top: 1px solid var(--border);
+		border-right: 1px solid var(--border);
+		border-bottom: 1px solid var(--border);
+		padding: 14px;
+	}
 
-  p {
-    margin-bottom: 18px;
-    color: var(--text);
-  }
+	.feature-block.green {
+		border-left-color: var(--accent3);
+		background: rgba(127,255,107,0.05);
+	}
 
-  strong { color: var(--heading); font-weight: 600; }
+	.code-block {
+		margin: 16px 0;
+		background: var(--code-bg);
+		border: 1px solid var(--code-border);
+		border-radius: 4px;
+		overflow: hidden;
+	}
 
-  /* ── CODE BLOCKS ── */
-  .code-block {
-    position: relative;
-    margin: 24px 0;
-    background: var(--code-bg);
-    border: 1px solid var(--code-border);
-    border-radius: 4px;
-    overflow: hidden;
-  }
+	.code-label {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 8px 14px;
+		background: #0d1520;
+		border-bottom: 1px solid var(--code-border);
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		color: var(--text-muted);
+	}
 
-  .code-label {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 16px;
-    background: #0d1520;
-    border-bottom: 1px solid var(--code-border);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-muted);
-    letter-spacing: 0.08em;
-  }
+	pre {
+		padding: 16px;
+		overflow-x: auto;
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 13px;
+		line-height: 1.65;
+	}
 
-  .code-dots {
-    display: flex;
-    gap: 5px;
-  }
+	code { color: #a8d8ea; }
 
-  .code-dots span {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    display: block;
-  }
+	.callout {
+		display: flex;
+		gap: 12px;
+		padding: 14px;
+		border: 1px solid;
+		margin: 14px 0;
+	}
 
-  .code-dots span:nth-child(1) { background: #ff5f57; }
-  .code-dots span:nth-child(2) { background: #ffbd2e; }
-  .code-dots span:nth-child(3) { background: #28ca41; }
+	.callout.tip { background: var(--tip-bg); border-color: rgba(0,200,255,0.25); }
+	.callout.warn { background: var(--warn-bg); border-color: rgba(255,107,53,0.3); }
+	.callout.ok { background: var(--ok-bg); border-color: rgba(127,255,107,0.25); }
 
-  pre {
-    padding: 20px 24px;
-    overflow-x: auto;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13.5px;
-    line-height: 1.7;
-  }
+	.callout-body {
+		font-size: 15px;
+		line-height: 1.7;
+	}
 
-  code { color: #a8d8ea; }
+	.callout strong {
+		display: block;
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		margin-bottom: 4px;
+	}
 
-  .kw  { color: #ff79c6; }   /* keywords */
-  .cm  { color: #4a5568; font-style: italic; } /* comments */
-  .st  { color: #f1fa8c; }   /* strings */
-  .nm  { color: #50fa7b; }   /* numbers/names */
-  .tp  { color: #8be9fd; }   /* types */
-  .fn  { color: #bd93f9; }   /* functions */
-  .op  { color: #ff6b35; }   /* operators / special */
+	.callout.tip strong { color: var(--accent); }
+	.callout.warn strong { color: var(--accent2); }
+	.callout.ok strong { color: var(--accent3); }
 
-  /* ── CALLOUTS ── */
-  .callout {
-    display: flex;
-    gap: 16px;
-    padding: 18px 22px;
-    margin: 24px 0;
-    border-radius: 3px;
-    border: 1px solid;
-  }
+	.visual {
+		margin: 16px 0;
+		padding: 14px;
+		border: 1px solid var(--border);
+		background: var(--bg3);
+	}
 
-  .callout.tip {
-    background: var(--tip-bg);
-    border-color: rgba(0, 200, 255, 0.25);
-  }
+	.placeholder {
+		min-height: 90px;
+		display: grid;
+		place-items: center;
+		text-align: center;
+		color: var(--text-dim);
+		border: 1px dashed var(--border);
+		background: rgba(255,255,255,0.02);
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 12px;
+		padding: 10px;
+	}
 
-  .callout.warn {
-    background: var(--warn-bg);
-    border-color: rgba(255, 107, 53, 0.3);
-  }
+	.caption {
+		color: var(--text-muted);
+		margin-top: 6px;
+		font-size: 13px;
+	}
 
-  .callout.success {
-    background: #0a1a0d;
-    border-color: rgba(127, 255, 107, 0.25);
-  }
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		margin: 14px 0;
+		font-size: 14px;
+	}
 
-  .callout-icon {
-    font-size: 18px;
-    flex-shrink: 0;
-    line-height: 1.6;
-  }
+	th, td {
+		border: 1px solid var(--border);
+		padding: 8px;
+		text-align: left;
+		vertical-align: top;
+	}
 
-  .callout-body {
-    font-size: 15px;
-    line-height: 1.7;
-  }
+	th { background: #0f1822; color: var(--heading); }
 
-  .callout.tip .callout-body { color: #7ecde8; }
-  .callout.warn .callout-body { color: #e8a07e; }
-  .callout.success .callout-body { color: #7ee88a; }
+	ul.custom {
+		list-style: none;
+		margin: 10px 0;
+		padding: 0;
+	}
 
-  .callout strong {
-    display: block;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    margin-bottom: 4px;
-  }
+	ul.custom li {
+		padding: 5px 0 5px 18px;
+		border-bottom: 1px solid rgba(30,37,48,0.5);
+		position: relative;
+	}
 
-  .callout.tip strong { color: var(--accent); }
-  .callout.warn strong { color: var(--accent2); }
-  .callout.success strong { color: var(--accent3); }
+	ul.custom li::before {
+		content: 'â–¸';
+		position: absolute;
+		left: 0;
+		color: var(--accent);
+		font-size: 11px;
+		top: 8px;
+	}
 
-  /* ── FLOW DIAGRAM ── */
-  .flow-diagram {
-    margin: 20px 0;
-    padding: 20px;
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    text-align: center;
-  }
+	.refs {
+		border-top: 1px solid var(--border);
+		margin-top: 16px;
+		padding-top: 12px;
+	}
 
-  .flow-diagram .step {
-    display: inline-block;
-    padding: 8px 14px;
-    background: var(--bg3);
-    border: 1px solid var(--border);
-    color: var(--heading);
-    margin: 4px;
-  }
+	.coverage {
+		margin: 20px 0;
+		padding: 18px;
+		border: 1px solid var(--border);
+		background: var(--bg3);
+	}
 
-  .flow-diagram .arrow {
-    color: var(--accent);
-    margin: 0 8px;
-  }
+	.footer {
+		border-top: 1px solid var(--border);
+		padding: 30px 0 44px;
+		font-family: 'JetBrains Mono', monospace;
+		color: var(--text-muted);
+		font-size: 12px;
+	}
 
-  /* ── BULLET LIST ── */
-  ul.custom {
-    list-style: none;
-    margin: 16px 0 20px;
-    padding: 0;
-  }
+	@keyframes fadeUp {
+		from { opacity: 0; transform: translateY(20px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
 
-  ul.custom li {
-    padding: 6px 0 6px 24px;
-    position: relative;
-    color: var(--text);
-    border-bottom: 1px solid rgba(30,37,48,0.5);
-    font-size: 16px;
-  }
-
-  ul.custom li:last-child { border-bottom: none; }
-
-  ul.custom li::before {
-    content: '▸';
-    position: absolute;
-    left: 0;
-    color: var(--accent);
-    font-size: 11px;
-    top: 9px;
-  }
-
-  /* ── FOOTER ── */
-  .footer {
-    border-top: 1px solid var(--border);
-    padding: 40px 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 16px;
-  }
-
-  .footer-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .footer-credit {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  /* ── ANIMATIONS ── */
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(24px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  /* ── SCROLLBAR ── */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: var(--bg); }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-
-  /* ── INLINE CODE ── */
-  p code, li code {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    background: var(--code-bg);
-    border: 1px solid var(--code-border);
-    padding: 1px 6px;
-    border-radius: 2px;
-    color: var(--accent);
-  }
-
-  /* ── DIVIDER ── */
-  .divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--border), transparent);
-    margin: 48px 0;
-  }
+	@media (max-width: 720px) {
+		.page-wrap { padding: 0 14px; }
+		.hero { padding-top: 54px; }
+		.post { padding: 16px; }
+		.hero-meta { gap: 10px; }
+	}
 </style>
 </head>
 <body>
-
 <div class="reading-bar" id="readingBar"></div>
 
 <div class="page-wrap">
-
-  <!-- HERO -->
-  <header class="hero">
-    <div class="hero-tags">
-      <span class="tag accent">Game Development</span>
-      <span class="tag">Unity</span>
-      <span class="tag">Backend</span>
-      <span class="tag">PlayFab</span>
-    </div>
-    <h1>Player Authentication:<span>PlayFab + Unity Multiplayer</span></h1>
-    <p class="hero-sub">From anonymous connections to full account system with sign-up, login, and recovery</p>
-    <div class="hero-meta">
-      <span>By Zeeshan</span>
-      <span class="dot">◆</span>
-      <span>February 2026</span>
-      <span class="dot">◆</span>
-      <span>8 min read</span>
-    </div>
-  </header>
-
-  <!-- TOC -->
-  <nav class="toc">
-    <div class="toc-title">// Table of Contents</div>
-    <ol>
-      <li><a href="#problem">The Problem</a></li>
-      <li><a href="#why">Why PlayFab?</a></li>
-      <li><a href="#setup">Setting It Up</a></li>
-      <li><a href="#flow">The Updated Game Flow</a></li>
-      <li><a href="#restructure">Project Restructuring</a></li>
-      <li><a href="#next">What's Next</a></li>
-      <li><a href="#takeaway">Takeaway</a></li>
-    </ol>
-  </nav>
+<header class="hero">
+		<div class="hero-tags">
+			<span class="tag accent">Game Development</span>
+			<span class="tag">Unity 6</span>
+			<span class="tag">Photon PUN 2</span>
+			<span class="tag">PlayFab</span>
+			<span class="tag">STAR Timeline</span>
+		</div>
+		<h1>Multiplayer GP Hunt<span>Developer Blog Timeline</span></h1>
+		<p class="hero-sub">A mechanics-first, code-aware blog series written around the actual project scripts, scenes, and gameplay systems.</p>
+		<div class="hero-meta">
+			<span>By Zeeshan</span>
+			<span>Apr 2026 compilation</span>
+			<span>Project-owned scripts only</span>
+			<span>Senior-dev tone</span>
+		</div>
+	</header>
 
   <article class="article">
 
-    <p>When building a multiplayer game, you eventually hit the point where you need real accounts — not just anonymous connections, but proper sign-up, login, and password recovery. Today I wired up <strong>PlayFab</strong> as the authentication backend for my Unity multiplayer project (which already uses <strong>Photon PUN 2</strong> for real-time networking), and here's how it went.</p>
-
-    <!-- SECTION 1 -->
-    <section class="section" id="problem">
-      <h2><span class="h-num">01</span> The Problem</h2>
-      <p>My game, <em>Multiplayer GP Hunt</em>, already had a working lobby and gameplay flow powered by Photon. Players could browse rooms, create rooms, and jump into a networked scene. But there was no identity layer — anyone could connect without an account. I needed:</p>
-      <ul class="custom">
-        <li><strong>User registration</strong> with email, username, and password</li>
-        <li><strong>Login</strong> with email and password</li>
-        <li><strong>Password reset</strong> via email recovery</li>
-      </ul>
-
-    </section>
-
-    <!-- SECTION 2 -->
-    <section class="section" id="why">
-      <h2><span class="h-num">02</span> Why PlayFab?</h2>
-      <p>PlayFab (part of Microsoft Azure) provides a free-tier backend-as-a-service designed for games. It handles player authentication, data storage, leaderboards, and more — without requiring me to spin up a custom server. For a Unity project, its C# SDK drops right in.</p>
-      <p>Key advantages:</p>
-      <ul class="custom">
-        <li>Free tier with generous limits (100k users)</li>
-        <li>Native C# SDK with Unity editor extensions</li>
-        <li>Built-in email recovery service</li>
-        <li>Works seamlessly alongside Photon PUN 2</li>
-        <li>No custom server infrastructure needed</li>
-      </ul>
-    </section>
-
-    <!-- SECTION 3 -->
-    <section class="section" id="setup">
-      <h2><span class="h-num">03</span> Setting It Up</h2>
-
-      <h3>1. Installing the PlayFab SDK</h3>
-      <p>I added the PlayFab SDK into <code>Assets/Plugins/PlayFabSDK/</code>. The SDK comes with editor extensions (<code>PlayFabEditorExtensions</code>) that make it easy to configure your Title ID directly in Unity. My Title ID is configured in <code>PlayFabSharedSettings.asset</code>, and from there the SDK handles all the API plumbing.</p>
-
-      <div class="callout tip">
-        <span class="callout-icon">💡</span>
-        <div class="callout-body">
-          <strong>Pro Tip</strong>
-          Get your Title ID from the PlayFab Dashboard under Settings → Title settings. This unique identifier links your game to the backend.
-        </div>
-      </div>
-
-      <h3>2. Building the Login &amp; Register Scene</h3>
-      <p>I created a new scene — <code>Login&amp;Register.unity</code> — which acts as the entry point for the game. The scene contains a simple UI built with <strong>TextMeshPro</strong> input fields:</p>
-      <ul class="custom">
-        <li><strong>Email</strong> input</li>
-        <li><strong>Password</strong> input</li>
-        <li><strong>Username</strong> input (for registration)</li>
-        <li>Buttons for <strong>Register</strong>, <strong>Login</strong>, and <strong>Forgot Password</strong></li>
-      </ul>
-      <p>This scene sits at the very start of the game flow, before the player ever touches the Photon-powered lobby.</p>
-
-      <h3>3. The PlayFabManager Script</h3>
-      <p>The core of the implementation is a single <code>PlayFabManager</code> MonoBehaviour that handles all three authentication flows:</p>
-
-      <h3>Registration</h3>
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>PlayFabManager.cs — UserRegister()</span>
-        </div>
-        <pre><code><span class="kw">public void</span> <span class="fn">UserRegister</span>()
+<section class="post" id="post1">
+			<h2><span class="h-num">01</span> PlayFabManager, Login Scene, and Identity Gate</h2>
+			<p class="meta">Date: 12 Jan 2026 | Period: 12 Jan to 25 Jan 2026</p>
+			<div class="star-grid">
+				<div class="star-card"><h4>Situation</h4><p>The project could already move into multiplayer flow, but the game still lacked a proper identity layer. Anyone could reach the lobby without an account, which meant we had no durable player state, recovery path, or future room identity.</p></div>
+				<div class="star-card"><h4>Task</h4><p>I owned the PlayFab onboarding path: registration, login, password recovery, and the transition into the lobby scene. The requirement was not just to â€œmake auth work,â€ but to make the auth layer cleanly precede networking.</p></div>
+				<div class="star-card"><h4>Action</h4><p>I wired PlayFab client calls into a single entry manager and treated the login scene as the boundary between anonymous and authenticated play. I also enforced a minimum password length locally before hitting the backend so the user gets fast feedback.</p></div>
+				<div class="star-card"><h4>Result</h4><p>The game now has a proper account gate. That matters architecturally because identity is no longer inferred from Photon connection state; it is established before session entry and can be used later for lobby presentation and room ownership.</p></div>
+			</div>
+			<div class="feature-block"><h4>Mechanics Delivered</h4><ul class="custom"><li>Registration mechanic with email, username, and password validation.</li><li>Login mechanic tied to a deterministic scene transition.</li><li>Password recovery mechanic via PlayFab email workflow.</li><li>Guest path kept as a fallback for testing and iteration.</li></ul></div>
+			<div class="code-block"><div class="code-label"><span>PlayFabManager.cs</span><span>Auth flow and scene gate</span></div><pre><code>public void UserRegister()
 {
-    <span class="kw">if</span> (passwordInput.text.Length &lt; <span class="nm">8</span>)
-    {
-        <span class="tp">Debug</span>.<span class="fn">LogError</span>(<span class="st">"Password must be at least 8 characters long."</span>);
-        <span class="kw">return</span>;
-    }
-    <span class="kw">var</span> request = <span class="kw">new</span> <span class="tp">RegisterPlayFabUserRequest</span>
-    {
-        Email = emailInput.text,
-        Password = passwordInput.text,
-        Username = usernameInput.text,
-        RequireBothUsernameAndEmail = <span class="kw">true</span>
-    };
+		if (passwordInput.text.Length &lt; 8)
+		{
+				Debug.LogError("Password must be at least 8 characters long.");
+				return;
+		}
 
-    <span class="tp">PlayFabClientAPI</span>.<span class="fn">RegisterPlayFabUser</span>(request, OnRegisterSuccess, OnRegisterFailure);
-}</code></pre>
-      </div>
+		var request = new RegisterPlayFabUserRequest
+		{
+				Email = emailInput.text,
+				Password = passwordInput.text,
+				Username = usernameInput.text,
+				RequireBothUsernameAndEmail = true
+		};
 
-      <p>Key decisions:</p>
-      <ul class="custom">
-        <li><strong>Client-side password validation</strong> — PlayFab enforces a minimum of 6 characters, but I opted for 8 as a reasonable baseline</li>
-        <li><strong>RequireBothUsernameAndEmail</strong> is set to <code>true</code> so players have a display name from day one</li>
-        <li>On success, the player is sent straight to the <code>LobbyScene</code></li>
-      </ul>
+		PlayFabClientAPI.RegisterPlayFabUser(request, OnRegisterSuccess, OnRegisterFailure);
+}
 
-      <h3>Login</h3>
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>PlayFabManager.cs — UserLogin()</span>
-        </div>
-        <pre><code><span class="kw">public void</span> <span class="fn">UserLogin</span>()
+private void LoadLobbyScene()
 {
-    <span class="kw">var</span> request = <span class="kw">new</span> <span class="tp">LoginWithEmailAddressRequest</span>
-    {
-        Email = emailInput.text,
-        Password = passwordInput.text,
-    };
+		if (string.IsNullOrWhiteSpace(lobbySceneName))
+		{
+				Debug.LogError("Lobby scene name is empty on PlayFabManager.");
+				return;
+		}
 
-    <span class="tp">PlayFabClientAPI</span>.<span class="fn">LoginWithEmailAddress</span>(request, OnLoginSuccess, OnLoginFailure);
-}</code></pre>
-      </div>
-      <p>Simple and clean — email + password. On success, PlayFab returns a <code>PlayFabId</code> which uniquely identifies the player, and we transition to the lobby.</p>
+		SceneManager.LoadScene(lobbySceneName);
+}</code></pre></div>
+			<div class="callout tip"><div class="callout-body"><strong>Engineering Note</strong>I intentionally kept PlayFab separate from Photon. That separation reduces coupling and means authentication failures do not poison the multiplayer state machine.</div></div>
+			<div class="visual"><div class="placeholder">Image placeholder: Login and register UI in Login&amp;Register.unity</div><div class="caption">Figure 1. Entry UI where PlayFab authentication happens before any lobby or room work.</div></div>
+			<table><thead><tr><th>Decision</th><th>Why it mattered</th><th>Result</th></tr></thead><tbody><tr><td>Client-side password check</td><td>Reduced round trips for a predictable validation failure</td><td>Faster user feedback</td></tr><tr><td>RequireBothUsernameAndEmail = true</td><td>Ensured display identity is present immediately</td><td>Cleaner lobby identity later</td></tr><tr><td>Lobby scene load after success</td><td>Auth becomes a strict precondition</td><td>Safer game flow</td></tr></tbody></table>
+			<div class="refs"><h4>References</h4><ul class="custom"><li>PlayFab Client API: RegisterPlayFabUser, LoginWithEmailAddress, SendAccountRecoveryEmail</li><li>Unity SceneManagement API</li><li>Login&amp;Register.unity</li></ul></div>
+		</section>
 
-      <h3>Password Reset</h3>
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>PlayFabManager.cs — ResetPassword()</span>
-        </div>
-        <pre><code><span class="kw">public void</span> <span class="fn">ResetPassword</span>()
-{
-    <span class="kw">var</span> request = <span class="kw">new</span> <span class="tp">SendAccountRecoveryEmailRequest</span>
-    {
-        Email = emailInput.text,
-        TitleId = <span class="st">"65710"</span>
-    };
-
-    <span class="tp">PlayFabClientAPI</span>.<span class="fn">SendAccountRecoveryEmail</span>(request, OnPasswordResetSuccess, OnPasswordResetFailure);
-}</code></pre>
-      </div>
-      <p>This fires off a recovery email through PlayFab's built-in email service. The player receives a link to reset their password — no custom email infrastructure needed.</p>
-    </section>
-
-    <!-- SECTION 4 -->
-    <section class="section" id="flow">
-      <h2><span class="h-num">04</span> The Updated Game Flow</h2>
-      <div class="flow-diagram">
-        <span class="step">Login &amp; Register</span>
-        <span class="arrow">→</span>
-        <span class="step">Lobby Scene</span>
-        <span class="arrow">→</span>
-        <span class="step">Gameplay Scene</span>
-      </div>
-      
-      <ul class="custom">
-        <li>Player opens the game and lands on the <strong>Login &amp; Register</strong> screen</li>
-        <li>They either create a new account or log in with existing credentials</li>
-        <li>On successful authentication, they're taken to the <strong>Lobby Scene</strong> where Photon connects them to the multiplayer lobby</li>
-        <li>From there, they can create or join rooms, which loads the <strong>Gameplay Scene</strong></li>
-      </ul>
-
-      <div class="callout success">
-        <span class="callout-icon">✅</span>
-        <div class="callout-body">
-          <strong>Seamless Integration</strong>
-          PlayFab authentication happens before Photon connection, creating a clean separation between identity and networking layers.
-        </div>
-      </div>
-    </section>
-
-    <!-- SECTION 5 -->
-    <section class="section" id="restructure">
-      <h2><span class="h-num">05</span> Project Restructuring</h2>
-      <p>While I was at it, I also reorganized the codebase. Scripts moved from flat directories into a cleaner hierarchy:</p>
-      <ul class="custom">
-        <li><code>Assets/Scripts/PlayFab/</code> — authentication logic</li>
-        <li><code>Assets/Scripts/Core/Gameplay/</code> — player controls and gameplay mechanics</li>
-        <li><code>Assets/Scripts/Multiplayer/</code> — Photon networking (room controller, etc.)</li>
-      </ul>
-      <p>This keeps PlayFab, gameplay, and networking concerns separated as the project grows.</p>
-    </section>
-
-    <!-- SECTION 6 -->
-    <section class="section" id="next">
-      <h2><span class="h-num">06</span> What's Next</h2>
-      <ul class="custom">
-        <li><strong>UI feedback</strong> — right now errors only go to <code>Debug.Log</code>. Next step is surfacing error messages (e.g. "email already taken", "wrong password") in the UI</li>
-        <li><strong>Session persistence</strong> — storing the auth token so players don't have to log in every time they launch the game</li>
-        <li><strong>Linking PlayFab identity to Photon</strong> — using the PlayFab username as the Photon nickname so other players see real names in the lobby</li>
-        <li><strong>Input validation</strong> — email format checking, confirm-password field, loading spinners during API calls</li>
-      </ul>
-    </section>
-
-    <div class="divider"></div>
-
-    <!-- SECTION 7 -->
-    <section class="section" id="takeaway">
-      <h2><span class="h-num">07</span> Takeaway</h2>
-      <p>PlayFab makes it remarkably easy to add authentication to a Unity game. The C# SDK mirrors the REST API closely, and the async callback pattern (<code>OnSuccess</code> / <code>OnFailure</code>) fits naturally into Unity's event-driven architecture. Combined with Photon for networking, you get a full multiplayer stack without managing any servers.</p>
-      <p><strong>Total time from "no auth" to "working registration, login, and password reset":</strong> one session.</p>
-    </section>
-
-    <!-- FOOTER -->
-    <footer class="footer">
-      <div class="footer-tags">
-        <span class="tag">Unity</span>
-        <span class="tag">PlayFab</span>
-        <span class="tag">Authentication</span>
-        <span class="tag">Multiplayer</span>
-        <span class="tag">PUN2</span>
-      </div>
-      <div class="footer-credit">Written by Zeeshan · February 2026</div>
-    </footer>
+<footer class="footer">Multiplayer GP Hunt Â· Developer timeline blog Â· STAR format Â· mechanics-focused and code-grounded</footer>
 
   </article>
 </div>
 
 <script>
-  // Reading progress bar
   const bar = document.getElementById('readingBar');
   window.addEventListener('scroll', () => {
     const doc = document.documentElement;
     const scrolled = doc.scrollTop;
     const total = doc.scrollHeight - doc.clientHeight;
-    bar.style.width = (scrolled / total * 100) + '%';
+    bar.style.width = total > 0 ? (scrolled / total * 100) + '%' : '0%';
   });
 </script>
 

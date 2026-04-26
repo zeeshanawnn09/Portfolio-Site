@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>02 LobbyMenu, RoomPanel, and Session Entry | Multiplayer GP Hunt</title>
+<title>08 TestConnectionText, CrosshairUI, UIManager, and Asset Pipeline | Multiplayer GP Hunt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <style>
@@ -447,49 +447,57 @@
 
   <article class="article">
 
-<section class="post" id="post2">
-			<h2><span class="h-num">02</span> LobbyMenu, RoomPanel, and Session Entry</h2>
-			<p class="meta">Date: 26 Jan 2026 | Period: 26 Jan to 8 Feb 2026</p>
-			<div class="star-grid"><div class="star-card"><h4>Situation</h4><p>Once authentication was stable, the next issue was that room browsing behaved like a thin demo rather than a production lobby. Room churn, stale state, and hidden network status all made testing noisy.</p></div><div class="star-card"><h4>Task</h4><p>I needed to turn the lobby into a truthful state view: connect to Photon, join the lobby, reconcile room list updates, and expose room entry actions only when the client was actually ready.</p></div><div class="star-card"><h4>Action</h4><p>I used Photon callbacks as the source of truth and rebuilt the UI as a reconciliation layer. RoomPanel became a small command object: it stores a room name and delegates to PhotonNetwork.JoinRoom.</p></div><div class="star-card"><h4>Result</h4><p>The lobby became predictable and testable. More importantly, room entry is now guided by state rather than by ad hoc button behavior.</p></div></div>
-			<div class="feature-block"><h4>Mechanics Delivered</h4><ul class="custom"><li>Room discovery mechanic with live occupancy display.</li><li>Create/join mechanic guarded by connection and readiness checks.</li><li>Master-client connect button gating for match start control.</li><li>Debug telemetry mechanic through connection, region, and player count text.</li></ul></div>
-			<div class="code-block"><div class="code-label"><span>LobbyMenu.cs</span><span>Room list and session gating</span></div><pre><code>public override void OnRoomListUpdate(List&lt;RoomInfo&gt; roomList)
+<section class="post" id="post8">
+			<h2><span class="h-num">08</span> TestConnectionText, CrosshairUI, UIManager, and Asset Pipeline</h2>
+			<p class="meta">Date: 20 Apr 2026 | Period: 20 Apr to 26 Apr 2026</p>
+			<div class="star-grid"><div class="star-card"><h4>Situation</h4><p>By the end of the project, gameplay systems were in place, but I still needed better developer visibility and cleaner scene / prefab integration so the project could be tested and understood quickly.</p></div><div class="star-card"><h4>Task</h4><p>I owned the debug HUD, crosshair, scene prompt behavior, and the asset layout that keeps the whole game buildable and understandable.</p></div><div class="star-card"><h4>Action</h4><p>I surfaced ownership, health, role, flowers, and souls through one HUD component, made the crosshair explicit and configurable, and kept scene transitions lightweight through a small UI manager.</p></div><div class="star-card"><h4>Result</h4><p>The game became much easier to verify because every important runtime variable had a visible output. This is not just UI polish; it is instrumentation that shortens debugging cycles.</p></div></div>
+			<div class="feature-block green"><h4>Mechanics Delivered</h4><ul class="custom"><li>Developer HUD mechanic for connection state, ownership, role, health, flowers, and souls.</li><li>Crosshair mechanic exposed as a configurable UI component instead of a hardcoded image.</li><li>Scene-prompt mechanic for intro and transition screens.</li><li>Asset pipeline note: scenes, Resources prefabs, and UI prefabs are structured around the gameplay systems they support.</li></ul></div>
+			<div class="code-block"><div class="code-label"><span>TestConnectionText.cs</span><span>Runtime diagnostics</span></div><pre><code>void Update()
 {
-		roomsInfo = roomList;
-		UpdateDisplayedRooms();
+		string roomName = PhotonNetwork.CurrentRoom != null ? PhotonNetwork.CurrentRoom.Name : "None";
+		text.text = "Connection status: " + PhotonNetwork.NetworkClientState + " Room: " + roomName;
 }
 
-public void NewRoom()
+public void DisplayHealth(int currentHealth, int maxHealth)
 {
-		string inputName = iFNewRoom.text;
-		if (inputName != "")
+		if (healthText != null)
 		{
-				if (!PhotonNetwork.IsConnectedAndReady)
-				{
-						statusText.text = "Connection status: Not connected";
-						return;
-				}
-
-				RoomOptions roomOptions = new RoomOptions();
-				roomOptions.IsOpen = true;
-				roomOptions.IsVisible = true;
-				roomOptions.MaxPlayers = (byte)4;
-
-				PhotonNetwork.JoinOrCreateRoom(inputName, roomOptions, TypedLobby.Default);
+				healthText.text = "Health: " + currentHealth + "/" + maxHealth;
 		}
 }</code></pre></div>
-			<div class="callout warn"><div class="callout-body"><strong>Tradeoff</strong>I did not over-engineer lobby UI with reactive bindings. The current approach is intentionally simple because room list updates are already event-driven through Photon and the main risk is state mismatch, not view complexity.</div></div>
-			<div class="visual"><div class="placeholder">Image placeholder: Lobby room list and connection region UI</div><div class="caption">Figure 2. Lobby state exposed directly to the player instead of hidden behind abstraction.</div></div>
-			<div class="code-block"><div class="code-label"><span>RoomPanel.cs</span><span>Room entry command</span></div><pre><code>public void SetRoomName(string name)
+			<div class="code-block"><div class="code-label"><span>CrosshairUI.cs</span><span>Configurable crosshair</span></div><pre><code>public void SetCrosshairColor(Color color)
 {
-		roomName = name;
+		if (crosshairImage != null)
+		{
+				crosshairImage.color = color;
+		}
 }
 
-public void Join()
+public void ShowCrosshair()
 {
-		PhotonNetwork.JoinRoom(roomName);
+		if (crosshairImage != null)
+		{
+				crosshairImage.enabled = true;
+		}
 }</code></pre></div>
-			<table><thead><tr><th>Lobby Concern</th><th>Implementation Choice</th><th>Why it is senior-code-ish</th></tr></thead><tbody><tr><td>Stale room list entries</td><td>Callback-driven reconciliation</td><td>State is pulled from Photon, not guessed</td></tr><tr><td>Room join spam</td><td>Readiness gating</td><td>Preconditions are explicit</td></tr><tr><td>Match start confusion</td><td>Player count and master-client gating</td><td>Authority is visible in UI</td></tr></tbody></table>
-			<div class="refs"><h4>References</h4><ul class="custom"><li>Photon PUN lobby callbacks</li><li>RoomPanel prefab</li><li>LobbyScene scene objects</li></ul></div>
+			<div class="code-block"><div class="code-label"><span>UIManager.cs</span><span>Scene prompt helper</span></div><pre><code>void Update()
+{
+		UpdateBlinkingText();
+
+		if (!loadOnAnyKey || isLoading)
+		{
+				return;
+		}
+
+		if (Input.anyKeyDown)
+		{
+				SceneManager.LoadScene(sceneName);
+		}
+}</code></pre></div>
+			<div class="callout tip"><div class="callout-body"><strong>Asset pipeline note</strong>The important assets are not random art files; they are the scenes and prefabs that bind systems together: Login&amp;Register, LobbyScene, Test, PlayerCapsule in Resources, room panels, crosshair UI, and the role/objective prefabs used by the mechanics above.</div></div>
+			<div class="visual"><div class="placeholder">Image placeholder: Debug HUD, crosshair, and scene prompt assets</div><div class="caption">Figure 8. The support layer that makes the game measurable, understandable, and shippable.</div></div>
+			<table><thead><tr><th>Asset / UI Item</th><th>Role</th><th>Why it matters to engineering</th></tr></thead><tbody><tr><td>Login&amp;Register.unity</td><td>Authentication entry scene</td><td>Separates auth from multiplayer</td></tr><tr><td>LobbyScene.unity</td><td>Matchmaking / room browser</td><td>State transition bridge</td></tr><tr><td>Test.unity</td><td>Main gameplay scene</td><td>Where all mechanics converge</td></tr><tr><td>PlayerCapsule prefab in Resources</td><td>Photon network spawn target</td><td>Required by PhotonNetwork.Instantiate</td></tr><tr><td>Crosshair UI</td><td>Local aim feedback</td><td>Supports player control fidelity</td></tr></tbody></table>
+			<div class="refs"><h4>References</h4><ul class="custom"><li>TestConnectionText.cs</li><li>CrosshairUI.cs</li><li>UIManager.cs</li><li>Assets/Scenes/Login&amp;Register.unity</li><li>Assets/Scenes/LobbyScene.unity</li><li>Assets/Scenes/Test.unity</li></ul></div>
 		</section>
 
 <footer class="footer">Multiplayer GP Hunt Â· Developer timeline blog Â· STAR format Â· mechanics-focused and code-grounded</footer>

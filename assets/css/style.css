@@ -7,10 +7,6 @@
  * copyright 2022 @codewithsadee
  */
 
-
-
-
-
 /*-----------------------------------*\
   #CUSTOM PROPERTY
 \*-----------------------------------*/
@@ -1825,6 +1821,8 @@ textarea.form-input::-webkit-resizer { display: none; }
     width: 75%;
     margin: 0;
   }
+
+  .blog-posts-list { grid-template-columns: repeat(2, 1fr); }
 
 
 

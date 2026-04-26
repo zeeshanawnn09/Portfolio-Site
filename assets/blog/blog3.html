@@ -1,861 +1,491 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Building an RPC-Centric Role System in Unity with PUN 2</title>
+<title>03 RoomController, Spawn Logic, and Role Assignment | Multiplayer GP Hunt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0a0d12;
-    --bg2: #0f1318;
-    --bg3: #141920;
-    --border: #1e2530;
-    --accent: #00c8ff;
-    --accent2: #ff6b35;
-    --accent3: #7fff6b;
-    --text: #d4dce8;
-    --text-muted: #5a6a7e;
-    --text-dim: #8a9ab0;
-    --heading: #eef2f8;
-    --code-bg: #0d1117;
-    --code-border: #1e2d3d;
-    --tip-bg: #0a1a24;
-    --warn-bg: #1a0f0a;
-  }
-
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  html { scroll-behavior: smooth; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Lora', Georgia, serif;
-    font-size: 17px;
-    line-height: 1.8;
-    overflow-x: hidden;
-  }
-
-  /* ── NOISE OVERLAY ── */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-    pointer-events: none;
-    z-index: 0;
-    opacity: 0.4;
-  }
-
-  /* ── GRID BACKGROUND ── */
-  body::after {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(0,200,255,0.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,200,255,0.025) 1px, transparent 1px);
-    background-size: 60px 60px;
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  /* ── LAYOUT ── */
-  .page-wrap {
-    position: relative;
-    z-index: 1;
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 0 24px;
-  }
-
-  /* ── HERO ── */
-  .hero {
-    padding: 80px 0 60px;
-    border-bottom: 1px solid var(--border);
-    animation: fadeUp 0.8s ease both;
-  }
-
-  .hero-tags {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-bottom: 28px;
-  }
-
-  .tag {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    padding: 4px 10px;
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    border-radius: 2px;
-  }
-
-  .tag.accent { border-color: var(--accent); color: var(--accent); }
-
-  .hero h1 {
-    font-family: 'Syne', sans-serif;
-    font-size: clamp(32px, 6vw, 54px);
-    font-weight: 800;
-    color: var(--heading);
-    line-height: 1.1;
-    letter-spacing: -0.02em;
-    margin-bottom: 12px;
-  }
-
-  .hero h1 span {
-    color: var(--accent);
-    display: block;
-  }
-
-  .hero-sub {
-    font-size: 19px;
-    color: var(--text-dim);
-    font-style: italic;
-    margin-bottom: 32px;
-    font-family: 'Lora', serif;
-  }
-
-  .hero-meta {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-
-  .hero-meta .dot { color: var(--border); }
-
-  .reading-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
-    z-index: 100;
-    width: 0%;
-    transition: width 0.1s linear;
-    box-shadow: 0 0 12px var(--accent);
-  }
-
-  /* ── TOC ── */
-  .toc {
-    margin: 48px 0;
-    padding: 28px 32px;
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
-    animation: fadeUp 0.8s 0.1s ease both;
-  }
-
-  .toc-title {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 16px;
-  }
-
-  .toc ol {
-    list-style: none;
-    counter-reset: toc;
-  }
-
-  .toc li {
-    counter-increment: toc;
-    padding: 5px 0;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-  }
-
-  .toc li:last-child { border-bottom: none; }
-
-  .toc li::before {
-    content: counter(toc, decimal-leading-zero);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-muted);
-    flex-shrink: 0;
-  }
-
-  .toc a {
-    color: var(--text-dim);
-    text-decoration: none;
-    font-size: 15px;
-    transition: color 0.2s;
-    font-family: 'Syne', sans-serif;
-    font-weight: 600;
-  }
-
-  .toc a:hover { color: var(--accent); }
-
-  /* ── ARTICLE BODY ── */
-  .article {
-    padding: 48px 0 80px;
-    animation: fadeUp 0.8s 0.2s ease both;
-  }
-
-  .section {
-    margin-bottom: 64px;
-  }
-
-  h2 {
-    font-family: 'Syne', sans-serif;
-    font-size: 28px;
-    font-weight: 800;
-    color: var(--heading);
-    margin-bottom: 20px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-
-  h2 .h-num {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    color: var(--accent);
-    font-weight: 400;
-    opacity: 0.7;
-  }
-
-  h3 {
-    font-family: 'Syne', sans-serif;
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--accent2);
-    margin: 28px 0 10px;
-    letter-spacing: 0.01em;
-  }
-
-  p {
-    margin-bottom: 18px;
-    color: var(--text);
-  }
-
-  strong { color: var(--heading); font-weight: 600; }
-
-  /* ── CODE BLOCKS ── */
-  .code-block {
-    position: relative;
-    margin: 24px 0;
-    background: var(--code-bg);
-    border: 1px solid var(--code-border);
-    border-radius: 4px;
-    overflow: hidden;
-  }
-
-  .code-label {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 16px;
-    background: #0d1520;
-    border-bottom: 1px solid var(--code-border);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-muted);
-    letter-spacing: 0.08em;
-  }
-
-  .code-dots {
-    display: flex;
-    gap: 5px;
-  }
-
-  .code-dots span {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    display: block;
-  }
-
-  .code-dots span:nth-child(1) { background: #ff5f57; }
-  .code-dots span:nth-child(2) { background: #ffbd2e; }
-  .code-dots span:nth-child(3) { background: #28ca41; }
-
-  pre {
-    padding: 20px 24px;
-    overflow-x: auto;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13.5px;
-    line-height: 1.7;
-  }
-
-  code { color: #a8d8ea; }
-
-  .kw  { color: #ff79c6; }   /* keywords */
-  .cm  { color: #4a5568; font-style: italic; } /* comments */
-  .st  { color: #f1fa8c; }   /* strings */
-  .nm  { color: #50fa7b; }   /* numbers/names */
-  .tp  { color: #8be9fd; }   /* types */
-  .fn  { color: #bd93f9; }   /* functions */
-  .op  { color: #ff6b35; }   /* operators / special */
-
-  /* ── CALLOUTS ── */
-  .callout {
-    display: flex;
-    gap: 16px;
-    padding: 18px 22px;
-    margin: 24px 0;
-    border-radius: 3px;
-    border: 1px solid;
-  }
-
-  .callout.tip {
-    background: var(--tip-bg);
-    border-color: rgba(0, 200, 255, 0.25);
-  }
-
-  .callout.warn {
-    background: var(--warn-bg);
-    border-color: rgba(255, 107, 53, 0.3);
-  }
-
-  .callout.success {
-    background: #0a1a0d;
-    border-color: rgba(127, 255, 107, 0.25);
-  }
-
-  .callout-icon {
-    font-size: 18px;
-    flex-shrink: 0;
-    line-height: 1.6;
-  }
-
-  .callout-body {
-    font-size: 15px;
-    line-height: 1.7;
-  }
-
-  .callout.tip .callout-body { color: #7ecde8; }
-  .callout.warn .callout-body { color: #e8a07e; }
-  .callout.success .callout-body { color: #7ee88a; }
-
-  .callout strong {
-    display: block;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    margin-bottom: 4px;
-  }
-
-  .callout.tip strong { color: var(--accent); }
-  .callout.warn strong { color: var(--accent2); }
-  .callout.success strong { color: var(--accent3); }
-
-  /* ── TABLE ── */
-  table {
-    width: 100%;
-    margin: 24px 0;
-    border-collapse: collapse;
-    font-size: 15px;
-  }
-
-  th, td {
-    padding: 12px 16px;
-    text-align: left;
-    border: 1px solid var(--border);
-  }
-
-  th {
-    background: var(--bg2);
-    color: var(--heading);
-    font-family: 'Syne', sans-serif;
-    font-weight: 600;
-  }
-
-  td {
-    background: var(--bg);
-    color: var(--text-dim);
-  }
-
-  /* ── BULLET LIST ── */
-  ul.custom {
-    list-style: none;
-    margin: 16px 0 20px;
-    padding: 0;
-  }
-
-  ul.custom li {
-    padding: 6px 0 6px 24px;
-    position: relative;
-    color: var(--text);
-    border-bottom: 1px solid rgba(30,37,48,0.5);
-    font-size: 16px;
-  }
-
-  ul.custom li:last-child { border-bottom: none; }
-
-  ul.custom li::before {
-    content: '▸';
-    position: absolute;
-    left: 0;
-    color: var(--accent);
-    font-size: 11px;
-    top: 9px;
-  }
-
-  /* ── BLOCKQUOTE ── */
-  blockquote {
-    margin: 28px 0;
-    padding: 20px 24px;
-    background: var(--bg2);
-    border-left: 3px solid var(--accent);
-    font-style: italic;
-    color: var(--text-dim);
-    font-size: 16px;
-    line-height: 1.6;
-  }
-
-  /* ── ORDERED LIST ── */
-  ol {
-    margin: 20px 0;
-    padding-left: 24px;
-    color: var(--text);
-  }
-
-  ol li {
-    margin-bottom: 12px;
-    padding-left: 8px;
-  }
-
-  /* ── FOOTER ── */
-  .footer {
-    border-top: 1px solid var(--border);
-    padding: 40px 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 16px;
-  }
-
-  .footer-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .footer-credit {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  /* ── ANIMATIONS ── */
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(24px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  /* ── SCROLLBAR ── */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: var(--bg); }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-
-  /* ── INLINE CODE ── */
-  p code, li code {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    background: var(--code-bg);
-    border: 1px solid var(--code-border);
-    padding: 1px 6px;
-    border-radius: 2px;
-    color: var(--accent);
-  }
-
-  /* ── DIVIDER ── */
-  .divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--border), transparent);
-    margin: 48px 0;
-  }
+	:root {
+		--bg: #0a0d12;
+		--bg2: #0f1318;
+		--bg3: #141920;
+		--border: #1e2530;
+		--accent: #00c8ff;
+		--accent2: #ff6b35;
+		--accent3: #7fff6b;
+		--text: #d4dce8;
+		--text-muted: #5a6a7e;
+		--text-dim: #8a9ab0;
+		--heading: #eef2f8;
+		--code-bg: #0d1117;
+		--code-border: #1e2d3d;
+		--tip-bg: #0a1a24;
+		--warn-bg: #1a0f0a;
+		--ok-bg: #0a1a0d;
+	}
+
+	* { margin: 0; padding: 0; box-sizing: border-box; }
+	html { scroll-behavior: smooth; }
+
+	body {
+		background: var(--bg);
+		color: var(--text);
+		font-family: 'Lora', Georgia, serif;
+		font-size: 17px;
+		line-height: 1.8;
+		overflow-x: hidden;
+	}
+
+	body::before {
+		content: '';
+		position: fixed;
+		inset: 0;
+		background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+		pointer-events: none;
+		z-index: 0;
+		opacity: 0.4;
+	}
+
+	body::after {
+		content: '';
+		position: fixed;
+		inset: 0;
+		background-image:
+			linear-gradient(rgba(0,200,255,0.025) 1px, transparent 1px),
+			linear-gradient(90deg, rgba(0,200,255,0.025) 1px, transparent 1px);
+		background-size: 60px 60px;
+		pointer-events: none;
+		z-index: 0;
+	}
+
+	.reading-bar {
+		position: fixed;
+		top: 0;
+		left: 0;
+		height: 3px;
+		background: linear-gradient(90deg, var(--accent), var(--accent2));
+		z-index: 100;
+		width: 0%;
+		transition: width 0.1s linear;
+		box-shadow: 0 0 12px var(--accent);
+	}
+
+	.page-wrap {
+		position: relative;
+		z-index: 1;
+		max-width: 1020px;
+		margin: 0 auto;
+		padding: 0 24px;
+	}
+
+	.hero {
+		padding: 76px 0 48px;
+		border-bottom: 1px solid var(--border);
+		animation: fadeUp 0.8s ease both;
+	}
+
+	.hero-tags {
+		display: flex;
+		gap: 10px;
+		flex-wrap: wrap;
+		margin-bottom: 22px;
+	}
+
+	.tag {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		padding: 4px 10px;
+		border: 1px solid var(--border);
+		color: var(--text-muted);
+		border-radius: 2px;
+	}
+
+	.tag.accent { border-color: var(--accent); color: var(--accent); }
+
+	.hero h1 {
+		font-family: 'Syne', sans-serif;
+		font-size: clamp(30px, 5.4vw, 52px);
+		font-weight: 800;
+		color: var(--heading);
+		line-height: 1.08;
+		letter-spacing: -0.02em;
+		margin-bottom: 12px;
+	}
+
+	.hero h1 span { color: var(--accent); display: block; }
+
+	.hero-sub {
+		font-size: 19px;
+		color: var(--text-dim);
+		font-style: italic;
+		margin-bottom: 20px;
+	}
+
+	.hero-meta {
+		display: flex;
+		gap: 18px;
+		flex-wrap: wrap;
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 12px;
+		color: var(--text-muted);
+	}
+
+	.toc {
+		margin: 40px 0;
+		padding: 24px 28px;
+		background: var(--bg2);
+		border: 1px solid var(--border);
+		border-left: 3px solid var(--accent);
+		animation: fadeUp 0.8s 0.1s ease both;
+	}
+
+	.toc-title {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		letter-spacing: 0.15em;
+		text-transform: uppercase;
+		color: var(--accent);
+		margin-bottom: 14px;
+	}
+
+	.toc ol { list-style: none; counter-reset: toc; }
+	.toc li {
+		counter-increment: toc;
+		padding: 6px 0;
+		border-bottom: 1px solid var(--border);
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+	}
+	.toc li:last-child { border-bottom: none; }
+	.toc li::before {
+		content: counter(toc, decimal-leading-zero);
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		color: var(--text-muted);
+		flex-shrink: 0;
+	}
+
+	.toc a {
+		color: var(--text-dim);
+		text-decoration: none;
+		font-size: 15px;
+		font-family: 'Syne', sans-serif;
+		font-weight: 600;
+		transition: color 0.2s;
+	}
+
+	.toc a:hover { color: var(--accent); }
+
+	.article { padding: 20px 0 80px; }
+	.post {
+		margin-bottom: 56px;
+		padding: 26px;
+		background: var(--bg2);
+		border: 1px solid var(--border);
+		animation: fadeUp 0.8s ease both;
+	}
+
+	h2 {
+		font-family: 'Syne', sans-serif;
+		font-size: 28px;
+		font-weight: 800;
+		color: var(--heading);
+		margin-bottom: 12px;
+		padding-bottom: 10px;
+		border-bottom: 1px solid var(--border);
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	h2 .h-num {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 13px;
+		color: var(--accent);
+		opacity: 0.8;
+		font-weight: 400;
+	}
+
+	h3 {
+		font-family: 'Syne', sans-serif;
+		font-size: 18px;
+		font-weight: 700;
+		color: var(--accent2);
+		margin: 24px 0 8px;
+	}
+
+	h4 {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--accent);
+		margin-bottom: 8px;
+	}
+
+	p { margin-bottom: 14px; }
+	strong { color: var(--heading); font-weight: 600; }
+
+	.meta {
+		font-family: 'JetBrains Mono', monospace;
+		color: var(--text-muted);
+		font-size: 12px;
+		margin-bottom: 18px;
+	}
+
+	.star-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 12px;
+		margin: 16px 0 10px;
+	}
+
+	.star-card {
+		border: 1px solid var(--border);
+		background: var(--bg3);
+		padding: 12px;
+	}
+
+	.feature-block {
+		margin: 16px 0;
+		border-left: 3px solid var(--accent2);
+		background: rgba(255,107,53,0.06);
+		border-top: 1px solid var(--border);
+		border-right: 1px solid var(--border);
+		border-bottom: 1px solid var(--border);
+		padding: 14px;
+	}
+
+	.feature-block.green {
+		border-left-color: var(--accent3);
+		background: rgba(127,255,107,0.05);
+	}
+
+	.code-block {
+		margin: 16px 0;
+		background: var(--code-bg);
+		border: 1px solid var(--code-border);
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.code-label {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 8px 14px;
+		background: #0d1520;
+		border-bottom: 1px solid var(--code-border);
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		color: var(--text-muted);
+	}
+
+	pre {
+		padding: 16px;
+		overflow-x: auto;
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 13px;
+		line-height: 1.65;
+	}
+
+	code { color: #a8d8ea; }
+
+	.callout {
+		display: flex;
+		gap: 12px;
+		padding: 14px;
+		border: 1px solid;
+		margin: 14px 0;
+	}
+
+	.callout.tip { background: var(--tip-bg); border-color: rgba(0,200,255,0.25); }
+	.callout.warn { background: var(--warn-bg); border-color: rgba(255,107,53,0.3); }
+	.callout.ok { background: var(--ok-bg); border-color: rgba(127,255,107,0.25); }
+
+	.callout-body {
+		font-size: 15px;
+		line-height: 1.7;
+	}
+
+	.callout strong {
+		display: block;
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		margin-bottom: 4px;
+	}
+
+	.callout.tip strong { color: var(--accent); }
+	.callout.warn strong { color: var(--accent2); }
+	.callout.ok strong { color: var(--accent3); }
+
+	.visual {
+		margin: 16px 0;
+		padding: 14px;
+		border: 1px solid var(--border);
+		background: var(--bg3);
+	}
+
+	.placeholder {
+		min-height: 90px;
+		display: grid;
+		place-items: center;
+		text-align: center;
+		color: var(--text-dim);
+		border: 1px dashed var(--border);
+		background: rgba(255,255,255,0.02);
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 12px;
+		padding: 10px;
+	}
+
+	.caption {
+		color: var(--text-muted);
+		margin-top: 6px;
+		font-size: 13px;
+	}
+
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		margin: 14px 0;
+		font-size: 14px;
+	}
+
+	th, td {
+		border: 1px solid var(--border);
+		padding: 8px;
+		text-align: left;
+		vertical-align: top;
+	}
+
+	th { background: #0f1822; color: var(--heading); }
+
+	ul.custom {
+		list-style: none;
+		margin: 10px 0;
+		padding: 0;
+	}
+
+	ul.custom li {
+		padding: 5px 0 5px 18px;
+		border-bottom: 1px solid rgba(30,37,48,0.5);
+		position: relative;
+	}
+
+	ul.custom li::before {
+		content: 'â–¸';
+		position: absolute;
+		left: 0;
+		color: var(--accent);
+		font-size: 11px;
+		top: 8px;
+	}
+
+	.refs {
+		border-top: 1px solid var(--border);
+		margin-top: 16px;
+		padding-top: 12px;
+	}
+
+	.coverage {
+		margin: 20px 0;
+		padding: 18px;
+		border: 1px solid var(--border);
+		background: var(--bg3);
+	}
+
+	.footer {
+		border-top: 1px solid var(--border);
+		padding: 30px 0 44px;
+		font-family: 'JetBrains Mono', monospace;
+		color: var(--text-muted);
+		font-size: 12px;
+	}
+
+	@keyframes fadeUp {
+		from { opacity: 0; transform: translateY(20px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+
+	@media (max-width: 720px) {
+		.page-wrap { padding: 0 14px; }
+		.hero { padding-top: 54px; }
+		.post { padding: 16px; }
+		.hero-meta { gap: 10px; }
+	}
 </style>
 </head>
 <body>
-
 <div class="reading-bar" id="readingBar"></div>
 
 <div class="page-wrap">
-
-  <!-- HERO -->
-  <header class="hero">
-    <div class="hero-tags">
-      <span class="tag accent">Game Development</span>
-      <span class="tag">Unity</span>
-      <span class="tag">Networking</span>
-      <span class="tag">PUN2</span>
-    </div>
-    <h1>RPC-Centric Role System:<span>Ghost vs Priest in Multiplayer</span></h1>
-    <p class="hero-sub">Synchronized, secure, and scalable role assignment using Photon RPC</p>
-    <div class="hero-meta">
-      <span>By Zeeshan</span>
-      <span class="dot">◆</span>
-      <span>February 2026</span>
-      <span class="dot">◆</span>
-      <span>10 min read</span>
-    </div>
-  </header>
-
-  <!-- TOC -->
-  <nav class="toc">
-    <div class="toc-title">// Table of Contents</div>
-    <ol>
-      <li><a href="#intro">Synchronization Requirements</a></li>
-      <li><a href="#why">Why Go RPC-Centric?</a></li>
-      <li><a href="#authority">Master Client Authority</a></li>
-      <li><a href="#pool">Role Pool Creation + Shuffle</a></li>
-      <li><a href="#rpc">RPC Role Distribution</a></li>
-      <li><a href="#execution">Player Role Execution</a></li>
-      <li><a href="#benefits">Benefits of RPC Architecture</a></li>
-      <li><a href="#safety">Multiplayer Safety Considerations</a></li>
-      <li><a href="#flow">Final Multiplayer Flow</a></li>
-      <li><a href="#when">When to Use RPC-Centric Design</a></li>
-      <li><a href="#conclusion">Final Thoughts</a></li>
-    </ol>
-  </nav>
+<header class="hero">
+		<div class="hero-tags">
+			<span class="tag accent">Game Development</span>
+			<span class="tag">Unity 6</span>
+			<span class="tag">Photon PUN 2</span>
+			<span class="tag">PlayFab</span>
+			<span class="tag">STAR Timeline</span>
+		</div>
+		<h1>Multiplayer GP Hunt<span>Developer Blog Timeline</span></h1>
+		<p class="hero-sub">A mechanics-first, code-aware blog series written around the actual project scripts, scenes, and gameplay systems.</p>
+		<div class="hero-meta">
+			<span>By Zeeshan</span>
+			<span>Apr 2026 compilation</span>
+			<span>Project-owned scripts only</span>
+			<span>Senior-dev tone</span>
+		</div>
+	</header>
 
   <article class="article">
 
-    <!-- SECTION 1 -->
-    <section class="section" id="intro">
-      <h2><span class="h-num">01</span> Synchronization Requirements</h2>
-      <p>In multiplayer games, <strong>synchronization is everything</strong>. When assigning secret roles like <em>Ghost</em> and <em>Priest</em>, you must ensure:</p>
-      <ul class="custom">
-        <li>All players receive the same result</li>
-        <li>The assignment happens only once</li>
-        <li>Late joiners stay in sync</li>
-        <li>The system is secure from duplication</li>
-      </ul>
-
-
-      <p>In this post, we'll break down an <strong>RPC-centric implementation</strong> using <strong>Photon Unity Networking (PUN 2)</strong> and explain:</p>
-      <ul class="custom">
-        <li>Why RPCs were used</li>
-        <li>How they were implemented</li>
-        <li>What benefits they provide</li>
-        <li>When this approach is ideal</li>
-      </ul>
-    </section>
-
-    <!-- SECTION 2 -->
-    <section class="section" id="why">
-      <h2><span class="h-num">02</span> Why Go RPC-Centric?</h2>
-      <p>Photon offers multiple synchronization methods, each suited to different use cases:</p>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Method</th>
-            <th>Good For</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Custom Properties</td>
-            <td>Persistent data</td>
-          </tr>
-          <tr>
-            <td>RaiseEvent</td>
-            <td>Lightweight event broadcasting</td>
-          </tr>
-          <tr>
-            <td>RPC</td>
-            <td>Direct object-bound execution</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <p>In this system, RPCs were chosen because:</p>
-      <ul class="custom">
-        <li>Roles must trigger behavior on a specific player object</li>
-        <li>Assignment should execute immediately</li>
-        <li>Late joiners must receive the role</li>
-        <li>Logic stays tightly coupled (role → character behavior)</li>
-      </ul>
-    </section>
-
-    <!-- SECTION 3 -->
-    <section class="section" id="authority">
-      <h2><span class="h-num">03</span> Master Client Authority</h2>
-      <p>Only the Master Client assigns roles. If every client shuffled locally, you would get desynchronization issues. Master authority ensures:</p>
-
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>Authority Check</span>
-        </div>
-        <pre><code><span class="kw">if</span> (!PhotonNetwork.IsMasterClient)
-    <span class="kw">return</span>;</code></pre>
-      </div>
-
-      <ul class="custom">
-        <li>Only one shuffle happens</li>
-        <li>Only one role list exists</li>
-        <li>Everyone receives identical results</li>
-      </ul>
-    </section>
-
-    <!-- SECTION 4 -->
-    <section class="section" id="pool">
-      <h2><span class="h-num">04</span> Role Pool Creation + Shuffle</h2>
-      <p>First, build the role pool based on the required counts:</p>
-
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>RolePoolSetup.cs</span>
-        </div>
-        <pre><code><span class="tp">List</span>&lt;<span class="tp">PlayerRole</span>&gt; roles = <span class="kw">new</span> <span class="tp">List</span>&lt;<span class="tp">PlayerRole</span>&gt;();
-
-<span class="kw">for</span> (<span class="kw">int</span> i = <span class="nm">0</span>; i &lt; PRIEST_COUNT; i++)
+<section class="post" id="post3">
+			<h2><span class="h-num">03</span> RoomController, Spawn Logic, and Role Assignment</h2>
+			<p class="meta">Date: 9 Feb 2026 | Period: 9 Feb to 22 Feb 2026</p>
+			<div class="star-grid"><div class="star-card"><h4>Situation</h4><p>The gameâ€™s actual multiplayer loop depends on a clean handoff from lobby to gameplay with the right player count, correct spawn positions, and balanced roles. This was the point where â€œnetworkingâ€ becomes â€œgame design.â€</p></div><div class="star-card"><h4>Task</h4><p>I needed to ensure each client spawns once, gets the right role, and lands in a spawn position that respects the role structure: one ghost, three priests.</p></div><div class="star-card"><h4>Action</h4><p>I made the master client responsible for orchestration and used actor number ordering plus delayed assignment checks so spawn and role RPCs do not race against object creation.</p></div><div class="star-card"><h4>Result</h4><p>Role assignment is now deterministic enough for actual gameplay tests. The lobby-to-match transition is no longer just a scene load; it produces a structured session.</p></div></div>
+			<div class="feature-block"><h4>Mechanics Delivered</h4><ul class="custom"><li>Spawn mechanic with grounded fallback and role-aware placement.</li><li>Role distribution mechanic: 1 ghost, 3 priests.</li><li>Master-client authority mechanic for role assignment and start sequencing.</li><li>Scene cleanup mechanic to destroy invalid scene copies before spawn.</li></ul></div>
+			<div class="code-block"><div class="code-label"><span>RoomController.cs</span><span>Spawn and roles</span></div><pre><code>void SpawnLocalPlayer()
 {
-    roles.Add(<span class="tp">PlayerRole</span>.Priest);
+		if (PlayerControls.localPlayerInstance == null)
+		{
+				Vector3 spawnPos = GetInitialSpawnPosition();
+				GameObject newCharacter = PhotonNetwork.Instantiate(playerCharacter.name, spawnPos, Quaternion.identity);
+				Debug.Log($"Spawned local player for {PhotonNetwork.LocalPlayer.NickName}. IsMine: {newCharacter.GetComponent&lt;PhotonView&gt;().IsMine}");
+		}
 }
-roles.Add(<span class="tp">PlayerRole</span>.Ghost);</code></pre>
-      </div>
 
-      <p>Then apply a Fisher-Yates shuffle to randomize role distribution:</p>
-
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>FisherYatesShuffle.cs</span>
-        </div>
-        <pre><code><span class="kw">for</span> (<span class="kw">int</span> i = roles.Count - <span class="nm">1</span>; i &gt; <span class="nm">0</span>; i--)
+void AssignRolesToAllPlayers()
 {
-    <span class="kw">int</span> randomIndex = <span class="tp">Random</span>.Range(<span class="nm">0</span>, i + <span class="nm">1</span>);
+		Player[] players = PhotonNetwork.CurrentRoom.Players.Values.ToArray();
+		List&lt;PlayerRole&gt; roles = new List&lt;PlayerRole&gt; { PlayerRole.Priest, PlayerRole.Priest, PlayerRole.Priest, PlayerRole.Ghost };
+		// roles are shuffled and then assigned through buffered RPCs
+}</code></pre></div>
+			<div class="callout tip"><div class="callout-body"><strong>Design Rationale</strong>The master client is not just a host; it is the session authority. That makes role assignment and spawn sequencing auditable, repeatable, and much easier to debug when a late join or a missing object happens.</div></div>
+			<div class="visual"><div class="placeholder">Image placeholder: Four-player lobby transitioning into gameplay</div><div class="caption">Figure 3. Spawn flow and role composition becoming visible at match start.</div></div>
+			<table><thead><tr><th>Implementation Detail</th><th>Why it exists</th><th>Effect</th></tr></thead><tbody><tr><td>CleanupInvalidScenePlayers()</td><td>Protect against scene-placed duplicates</td><td>Prevents duplicate authority objects</td></tr><tr><td>GetInitialSpawnPosition()</td><td>Role-aware placement</td><td>More controlled match setup</td></tr><tr><td>AssignRolesWhenReady()</td><td>Wait for all player objects</td><td>Stops race conditions between spawn and RPC</td></tr></tbody></table>
+			<div class="refs"><h4>References</h4><ul class="custom"><li>RoomController.cs</li><li>PlayerControls role RPCs</li><li>Spawn points in gameplay scene</li></ul></div>
+		</section>
 
-    <span class="tp">PlayerRole</span> temp = roles[i];
-    roles[i] = roles[randomIndex];
-    roles[randomIndex] = temp;
-}</code></pre>
-      </div>
-
-      <p>This approach is scalable and prevents duplicate role assignment.</p>
-    </section>
-
-    <!-- SECTION 5 -->
-    <section class="section" id="rpc">
-      <h2><span class="h-num">05</span> RPC Role Distribution</h2>
-      <p>Once roles are shuffled, the Master Client sends each role to its target player via RPC:</p>
-
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>RoleAssignment.cs</span>
-        </div>
-        <pre><code>pControl.photonView.RPC(
-    <span class="st">"AssignPlayerRole"</span>,
-    <span class="tp">RpcTarget</span>.AllBuffered,
-    (<span class="kw">int</span>)role
-);</code></pre>
-      </div>
-
-      <h3>Why <code>RpcTarget.AllBuffered</code>?</h3>
-      <ul class="custom">
-        <li><strong>All</strong> → Executes on every connected client</li>
-        <li><strong>Buffered</strong> → Stores call for late joiners</li>
-      </ul>
-
-      <div class="callout tip">
-        <span class="callout-icon">💡</span>
-        <div class="callout-body">
-          <strong>Late Join Protection</strong>
-          Without buffering, reconnecting players would not receive a role. Buffered RPCs replay automatically when new players join the room.
-        </div>
-      </div>
-    </section>
-
-    <!-- SECTION 6 -->
-    <section class="section" id="execution">
-      <h2><span class="h-num">06</span> Player Role Execution</h2>
-      <p>Each player object receives the RPC and executes role-specific logic locally:</p>
-
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>PlayerControls.cs</span>
-        </div>
-        <pre><code>[<span class="tp">PunRPC</span>]
-<span class="kw">void</span> <span class="fn">AssignPlayerRole</span>(<span class="kw">int</span> roleIndex)
-{
-    <span class="tp">PlayerRole</span> role = (<span class="tp">PlayerRole</span>)roleIndex;
-
-    <span class="kw">if</span> (role == <span class="tp">PlayerRole</span>.Ghost)
-    {
-        BecomeGhost();
-    }
-    <span class="kw">else</span>
-    {
-        BecomePriest();
-    }
-}</code></pre>
-      </div>
-
-      <p>By attaching the RPC to the player object, the role logic stays clean and modular. Each player controls its own behavior based on the assigned role.</p>
-    </section>
-
-    <!-- SECTION 7 -->
-    <section class="section" id="benefits">
-      <h2><span class="h-num">07</span> Benefits of an RPC-Centric Architecture</h2>
-
-      <h3>1. Strong Authority Model</h3>
-      <p>Only the Master assigns roles, preventing duplication and ensuring consistent state across all clients.</p>
-
-      <h3>2. Automatic Late Join Sync</h3>
-      <p>Buffered RPCs replay automatically when new players join, eliminating manual sync logic.</p>
-
-      <h3>3. Clean Separation of Concerns</h3>
-      <ul class="custom">
-        <li><strong>RoomController</strong> → Manages game flow and orchestration</li>
-        <li><strong>PlayerControls</strong> → Handles individual character behavior</li>
-      </ul>
-
-      <h3>4. Event-Driven Execution</h3>
-      <p>No need for polling or update checks. The event executes instantly when triggered.</p>
-
-      <h3>5. Scalable Design</h3>
-      <p>Want multiple ghosts? Special roles? Just change role list creation. The RPC distribution logic stays identical.</p>
-    </section>
-
-    <!-- SECTION 8 -->
-    <section class="section" id="safety">
-      <h2><span class="h-num">08</span> Multiplayer Safety Considerations</h2>
-
-      <div class="callout warn">
-        <span class="callout-icon">⚠️</span>
-        <div class="callout-body">
-          <strong>Prevent Double Assignment</strong>
-          Always guard your role assignment logic with a flag to prevent duplicate shuffles and inconsistent state.
-        </div>
-      </div>
-
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>SafetyCheck.cs</span>
-        </div>
-        <pre><code><span class="kw">private bool</span> rolesAssigned = <span class="kw">false</span>;
-
-<span class="kw">void</span> <span class="fn">AssignRoles</span>()
-{
-    <span class="kw">if</span> (rolesAssigned) <span class="kw">return</span>;
-    rolesAssigned = <span class="kw">true</span>;
-    
-    <span class="cm">// Assignment logic here...</span>
-}</code></pre>
-      </div>
-
-      <h3>Handle Master Client Switch</h3>
-      <p>If the Master Client disconnects, Photon automatically assigns a new Master. You may want to re-validate state:</p>
-
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>MasterClientHandler.cs</span>
-        </div>
-        <pre><code><span class="kw">public override void</span> <span class="fn">OnMasterClientSwitched</span>(<span class="tp">Player</span> newMasterClient)
-{
-    <span class="cm">// Optional: Re-validate state</span>
-    <span class="cm">// Check if roles were already assigned</span>
-}</code></pre>
-      </div>
-    </section>
-
-    <!-- SECTION 9 -->
-    <section class="section" id="flow">
-      <h2><span class="h-num">09</span> Final Multiplayer Flow</h2>
-      <p>The complete role assignment sequence follows this order:</p>
-
-      <ol style="list-style: decimal; padding-left: 24px; margin: 20px 0;">
-        <li style="margin: 8px 0; color: var(--text);">Master loads room</li>
-        <li style="margin: 8px 0; color: var(--text);">Players join sequentially</li>
-        <li style="margin: 8px 0; color: var(--text);">Characters spawn in the game world</li>
-        <li style="margin: 8px 0; color: var(--text);">When 4 players present:
-          <ul style="list-style: circle; padding-left: 24px; margin-top: 8px;">
-            <li style="margin: 4px 0; color: var(--text-dim);">Create role list</li>
-            <li style="margin: 4px 0; color: var(--text-dim);">Shuffle roles using Fisher-Yates</li>
-            <li style="margin: 4px 0; color: var(--text-dim);">Send buffered RPCs to each player</li>
-          </ul>
-        </li>
-        <li style="margin: 8px 0; color: var(--text);">Players execute role logic locally</li>
-        <li style="margin: 8px 0; color: var(--text);">Late joiners receive buffered calls automatically</li>
-      </ol>
-    </section>
-
-    <!-- SECTION 10 -->
-    <section class="section" id="when">
-      <h2><span class="h-num">10</span> When Should You Use RPC-Centric Design?</h2>
-
-      <h3>Use RPC when:</h3>
-      <ul class="custom">
-        <li>The action is event-based (one-time triggers)</li>
-        <li>Immediate execution is required</li>
-        <li>Logic belongs to a specific object</li>
-        <li>Late join replay is necessary</li>
-      </ul>
-
-      <h3>Avoid RPC when:</h3>
-      <ul class="custom">
-        <li>Persistent long-term data is required (use Custom Properties instead)</li>
-        <li>Server-side validation is needed</li>
-        <li>High-frequency event spam occurs (60+ calls per second)</li>
-      </ul>
-    </section>
-
-    <div class="divider"></div>
-
-    <!-- CONCLUSION -->
-    <section class="section" id="conclusion">
-      <h2><span class="h-num">11</span> Final Thoughts</h2>
-      <p>This RPC-centric implementation provides a clean, scalable, and multiplayer-safe architecture built around one simple principle:</p>
-
-      <blockquote style="border-left: 3px solid var(--accent); padding-left: 20px; margin: 24px 0; font-style: italic; color: var(--text-dim);">
-        One authority decides.<br>
-        RPC distributes.<br>
-        Objects react locally.
-      </blockquote>
-
-      <p>That's solid multiplayer engineering. The pattern scales beautifully — whether you're assigning roles in a social deduction game or distributing loot in a dungeon crawler, the core principle remains the same: centralized decision-making with distributed execution.</p>
-    </section>
-
-    <!-- FOOTER -->
-    <footer class="footer">
-      <div class="footer-tags">
-        <span class="tag">Unity</span>
-        <span class="tag">Photon</span>
-        <span class="tag">PUN2</span>
-        <span class="tag">Multiplayer</span>
-        <span class="tag">Networking</span>
-      </div>
-      <div class="footer-credit">Written by Zeeshan · March 2026</div>
-    </footer>
+<footer class="footer">Multiplayer GP Hunt Â· Developer timeline blog Â· STAR format Â· mechanics-focused and code-grounded</footer>
 
   </article>
 </div>
 
 <script>
-  // Reading progress bar
   const bar = document.getElementById('readingBar');
   window.addEventListener('scroll', () => {
     const doc = document.documentElement;
     const scrolled = doc.scrollTop;
     const total = doc.scrollHeight - doc.clientHeight;
-    bar.style.width = (scrolled / total * 100) + '%';
+    bar.style.width = total > 0 ? (scrolled / total * 100) + '%' : '0%';
   });
 </script>
 

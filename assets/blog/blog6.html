@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>02 LobbyMenu, RoomPanel, and Session Entry | Multiplayer GP Hunt</title>
+<title>06 Flower, Soul, Ash Pot, and AI Spawn Systems | Multiplayer GP Hunt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <style>
@@ -447,49 +447,78 @@
 
   <article class="article">
 
-<section class="post" id="post2">
-			<h2><span class="h-num">02</span> LobbyMenu, RoomPanel, and Session Entry</h2>
-			<p class="meta">Date: 26 Jan 2026 | Period: 26 Jan to 8 Feb 2026</p>
-			<div class="star-grid"><div class="star-card"><h4>Situation</h4><p>Once authentication was stable, the next issue was that room browsing behaved like a thin demo rather than a production lobby. Room churn, stale state, and hidden network status all made testing noisy.</p></div><div class="star-card"><h4>Task</h4><p>I needed to turn the lobby into a truthful state view: connect to Photon, join the lobby, reconcile room list updates, and expose room entry actions only when the client was actually ready.</p></div><div class="star-card"><h4>Action</h4><p>I used Photon callbacks as the source of truth and rebuilt the UI as a reconciliation layer. RoomPanel became a small command object: it stores a room name and delegates to PhotonNetwork.JoinRoom.</p></div><div class="star-card"><h4>Result</h4><p>The lobby became predictable and testable. More importantly, room entry is now guided by state rather than by ad hoc button behavior.</p></div></div>
-			<div class="feature-block"><h4>Mechanics Delivered</h4><ul class="custom"><li>Room discovery mechanic with live occupancy display.</li><li>Create/join mechanic guarded by connection and readiness checks.</li><li>Master-client connect button gating for match start control.</li><li>Debug telemetry mechanic through connection, region, and player count text.</li></ul></div>
-			<div class="code-block"><div class="code-label"><span>LobbyMenu.cs</span><span>Room list and session gating</span></div><pre><code>public override void OnRoomListUpdate(List&lt;RoomInfo&gt; roomList)
+<section class="post" id="post6">
+			<h2><span class="h-num">06</span> Flower, Soul, Ash Pot, and AI Spawn Systems</h2>
+			<p class="meta">Date: 23 Mar 2026 | Period: 23 Mar to 5 Apr 2026</p>
+			<div class="star-grid"><div class="star-card"><h4>Situation</h4><p>The game needed a resource economy and creature loop so the priests and ghost would have distinct objectives. This is where the project stops being just combat and becomes a real asymmetric game.</p></div><div class="star-card"><h4>Task</h4><p>I owned the spawn and pickup systems for flowers, souls, and ash pots, plus the AI behavior that makes souls function like moving objectives rather than static pickups.</p></div><div class="star-card"><h4>Action</h4><p>I moved spawning authority to the master client, used room-safe counts to keep shared progress synchronized, and made pickup validation depend on role and distance rather than just trigger overlap.</p></div><div class="star-card"><h4>Result</h4><p>The game now has the core exchange loop: priests gather flowers, ghosts gather souls, dead priests drop ash pots, and the master-client owns authoritative spawn and collection logic.</p></div></div>
+			<div class="feature-block"><h4>Mechanics Delivered</h4><ul class="custom"><li>Flower spawning mechanic with spawn-point caps and respawn delays.</li><li>Flower pickup mechanic validated by priest-only range checks.</li><li>Soul spawn and collection mechanic with ghost-only rules and dropped-soul support.</li><li>Ash pot mechanic for priest revival after a corpse/reward interaction.</li><li>AI soul behavior that seeks lit lamps before wandering.</li></ul></div>
+			<div class="code-block"><div class="code-label"><span>FlowerSpawningSystem.cs</span><span>Shared resource spawning</span></div><pre><code>private void SpawnFlowerAtIndex(int index)
 {
-		roomsInfo = roomList;
-		UpdateDisplayedRooms();
-}
+		if (!PhotonNetwork.IsMasterClient || flowerPrefab == null) return;
+		if (spawnedFlowerCounts[index] &gt;= maxFlowersPerSpawnPoint) return;
+		if (activeFlowers[index] != null) return;
 
-public void NewRoom()
-{
-		string inputName = iFNewRoom.text;
-		if (inputName != "")
+		GameObject spawnedFlowerObject = PhotonNetwork.InstantiateRoomObject(
+				flowerPrefab.name,
+				GetSpawnPosition(spawnPoints[index]),
+				spawnPoints[index].rotation);
+
+		FlowerPickup flowerPickup = spawnedFlowerObject.GetComponent&lt;FlowerPickup&gt;();
+		if (flowerPickup != null)
 		{
-				if (!PhotonNetwork.IsConnectedAndReady)
-				{
-						statusText.text = "Connection status: Not connected";
-						return;
-				}
-
-				RoomOptions roomOptions = new RoomOptions();
-				roomOptions.IsOpen = true;
-				roomOptions.IsVisible = true;
-				roomOptions.MaxPlayers = (byte)4;
-
-				PhotonNetwork.JoinOrCreateRoom(inputName, roomOptions, TypedLobby.Default);
+				flowerPickup.Initialize(this, index);
+				activeFlowers[index] = flowerPickup;
+				spawnedFlowerCounts[index]++;
 		}
 }</code></pre></div>
-			<div class="callout warn"><div class="callout-body"><strong>Tradeoff</strong>I did not over-engineer lobby UI with reactive bindings. The current approach is intentionally simple because room list updates are already event-driven through Photon and the main risk is state mismatch, not view complexity.</div></div>
-			<div class="visual"><div class="placeholder">Image placeholder: Lobby room list and connection region UI</div><div class="caption">Figure 2. Lobby state exposed directly to the player instead of hidden behind abstraction.</div></div>
-			<div class="code-block"><div class="code-label"><span>RoomPanel.cs</span><span>Room entry command</span></div><pre><code>public void SetRoomName(string name)
+			<div class="code-block"><div class="code-label"><span>AISoulSystem.cs</span><span>Soul ownership and respawn</span></div><pre><code>public void RequestCollectSoul(SoulPickup soulPickup, int requestingActorNumber)
 {
-		roomName = name;
-}
+		if (!PhotonNetwork.IsMasterClient || soulPickup == null) return;
 
-public void Join()
-{
-		PhotonNetwork.JoinRoom(roomName);
+		if (!IsPickupValid(soulPickup, requestingActorNumber, out PlayerControls requestingPlayer))
+		{
+				return;
+		}
+
+		activeSouls[spawnPointIndex] = null;
+		soulPickup.MarkCollected();
+
+		int nextSoulCount = Mathf.Min(requestingPlayer.SoulCount + 1, PlayerControls.MaxSoulCount);
+		requestingPlayer.photonView.RPC(nameof(PlayerControls.RPC_SetSoulCount), RpcTarget.AllBuffered, nextSoulCount);
+		PhotonNetwork.Destroy(soulPickup.gameObject);
 }</code></pre></div>
-			<table><thead><tr><th>Lobby Concern</th><th>Implementation Choice</th><th>Why it is senior-code-ish</th></tr></thead><tbody><tr><td>Stale room list entries</td><td>Callback-driven reconciliation</td><td>State is pulled from Photon, not guessed</td></tr><tr><td>Room join spam</td><td>Readiness gating</td><td>Preconditions are explicit</td></tr><tr><td>Match start confusion</td><td>Player count and master-client gating</td><td>Authority is visible in UI</td></tr></tbody></table>
-			<div class="refs"><h4>References</h4><ul class="custom"><li>Photon PUN lobby callbacks</li><li>RoomPanel prefab</li><li>LobbyScene scene objects</li></ul></div>
+			<div class="code-block"><div class="code-label"><span>SoulAI.cs</span><span>AI target selection</span></div><pre><code>private void UpdateDroppedSoulMovement()
+{
+		if (currentHealth &lt;= 0) return;
+
+		LitLampBehavior targetLamp = GetNearestLitLamp();
+		if (targetLamp != null)
+		{
+				MoveTowardsLamp(targetLamp);
+				return;
+		}
+
+		WanderAround();
+}</code></pre></div>
+			<div class="code-block"><div class="code-label"><span>AshPotPickup.cs</span><span>Priest recovery object</span></div><pre><code>private void RPC_RequestPickup(int requestingActorNumber)
+{
+		if (!PhotonNetwork.IsMasterClient) return;
+
+		if (!TryGetRequestingPriest(requestingActorNumber, out PlayerControls requestingPlayer))
+		{
+				return;
+		}
+
+		if (requestingPlayer.HasAshPot) return;
+		if (Vector3.Distance(requestingPlayer.transform.position, transform.position) &gt; pickupDistance) return;
+
+		requestingPlayer.photonView.RPC(nameof(PlayerControls.RPC_SetAshPotCarriedData), RpcTarget.AllBuffered, true, SourcePlayerViewId);
+		PhotonNetwork.Destroy(gameObject);
+}</code></pre></div>
+			<div class="callout tip"><div class="callout-body"><strong>Design lens</strong>These systems are not just collectibles. They are economy controls. Flowers, souls, and ash pots exist to shape pacing, risk, and role asymmetry.</div></div>
+			<div class="visual"><div class="placeholder">Image placeholder: Flower spawns, dropped soul, and ash pot pickup state</div><div class="caption">Figure 6. Resource economy showing that the two roles are solving different problems.</div></div>
+			<table><thead><tr><th>System</th><th>Authority owner</th><th>Gameplay purpose</th></tr></thead><tbody><tr><td>FlowerSpawningSystem</td><td>Master client</td><td>Priest objective resource generation</td></tr><tr><td>AISoulSystem</td><td>Master client</td><td>Ghost objective spawning and dropped soul control</td></tr><tr><td>AshPotPickup</td><td>Master client</td><td>Priest revive trigger and state reconciliation</td></tr></tbody></table>
+			<div class="refs"><h4>References</h4><ul class="custom"><li>FlowerSpawningSystem.cs</li><li>FlowerPickup.cs</li><li>AISoulSystem.cs</li><li>SoulPickup.cs</li><li>SoulAI.cs</li><li>AshPotPickup.cs</li></ul></div>
 		</section>
 
 <footer class="footer">Multiplayer GP Hunt Â· Developer timeline blog Â· STAR format Â· mechanics-focused and code-grounded</footer>

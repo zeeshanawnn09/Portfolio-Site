@@ -1,798 +1,527 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Voice Chat in Multiplayer Games — Photon Voice 2 + PUN2</title>
+<title>04 PlayerControls, PooledProjectile, and Core Combat Loop | Multiplayer GP Hunt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0a0d12;
-    --bg2: #0f1318;
-    --bg3: #141920;
-    --border: #1e2530;
-    --accent: #00c8ff;
-    --accent2: #ff6b35;
-    --accent3: #7fff6b;
-    --text: #d4dce8;
-    --text-muted: #5a6a7e;
-    --text-dim: #8a9ab0;
-    --heading: #eef2f8;
-    --code-bg: #0d1117;
-    --code-border: #1e2d3d;
-    --tip-bg: #0a1a24;
-    --warn-bg: #1a0f0a;
-  }
-
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  html { scroll-behavior: smooth; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Lora', Georgia, serif;
-    font-size: 17px;
-    line-height: 1.8;
-    overflow-x: hidden;
-  }
-
-  /* ── NOISE OVERLAY ── */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-    pointer-events: none;
-    z-index: 0;
-    opacity: 0.4;
-  }
-
-  /* ── GRID BACKGROUND ── */
-  body::after {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(0,200,255,0.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,200,255,0.025) 1px, transparent 1px);
-    background-size: 60px 60px;
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  /* ── LAYOUT ── */
-  .page-wrap {
-    position: relative;
-    z-index: 1;
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 0 24px;
-  }
-
-  /* ── HERO ── */
-  .hero {
-    padding: 80px 0 60px;
-    border-bottom: 1px solid var(--border);
-    animation: fadeUp 0.8s ease both;
-  }
-
-  .hero-tags {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-bottom: 28px;
-  }
-
-  .tag {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    padding: 4px 10px;
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    border-radius: 2px;
-  }
-
-  .tag.accent { border-color: var(--accent); color: var(--accent); }
-
-  .hero h1 {
-    font-family: 'Syne', sans-serif;
-    font-size: clamp(32px, 6vw, 54px);
-    font-weight: 800;
-    color: var(--heading);
-    line-height: 1.1;
-    letter-spacing: -0.02em;
-    margin-bottom: 12px;
-  }
-
-  .hero h1 span {
-    color: var(--accent);
-    display: block;
-  }
-
-  .hero-sub {
-    font-size: 19px;
-    color: var(--text-dim);
-    font-style: italic;
-    margin-bottom: 32px;
-    font-family: 'Lora', serif;
-  }
-
-  .hero-meta {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-
-  .hero-meta .dot { color: var(--border); }
-
-  .reading-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
-    z-index: 100;
-    width: 0%;
-    transition: width 0.1s linear;
-    box-shadow: 0 0 12px var(--accent);
-  }
-
-  /* ── TOC ── */
-  .toc {
-    margin: 48px 0;
-    padding: 28px 32px;
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
-    animation: fadeUp 0.8s 0.1s ease both;
-  }
-
-  .toc-title {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 16px;
-  }
-
-  .toc ol {
-    list-style: none;
-    counter-reset: toc;
-  }
-
-  .toc li {
-    counter-increment: toc;
-    padding: 5px 0;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-  }
-
-  .toc li:last-child { border-bottom: none; }
-
-  .toc li::before {
-    content: counter(toc, decimal-leading-zero);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-muted);
-    flex-shrink: 0;
-  }
-
-  .toc a {
-    color: var(--text-dim);
-    text-decoration: none;
-    font-size: 15px;
-    transition: color 0.2s;
-    font-family: 'Syne', sans-serif;
-    font-weight: 600;
-  }
-
-  .toc a:hover { color: var(--accent); }
-
-  /* ── ARTICLE BODY ── */
-  .article {
-    padding: 48px 0 80px;
-    animation: fadeUp 0.8s 0.2s ease both;
-  }
-
-  .section {
-    margin-bottom: 64px;
-  }
-
-  h2 {
-    font-family: 'Syne', sans-serif;
-    font-size: 28px;
-    font-weight: 800;
-    color: var(--heading);
-    margin-bottom: 20px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-
-  h2 .h-num {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    color: var(--accent);
-    font-weight: 400;
-    opacity: 0.7;
-  }
-
-  h3 {
-    font-family: 'Syne', sans-serif;
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--accent2);
-    margin: 28px 0 10px;
-    letter-spacing: 0.01em;
-  }
-
-  p {
-    margin-bottom: 18px;
-    color: var(--text);
-  }
-
-  strong { color: var(--heading); font-weight: 600; }
-
-  /* ── CODE BLOCKS ── */
-  .code-block {
-    position: relative;
-    margin: 24px 0;
-    background: var(--code-bg);
-    border: 1px solid var(--code-border);
-    border-radius: 4px;
-    overflow: hidden;
-  }
-
-  .code-label {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 16px;
-    background: #0d1520;
-    border-bottom: 1px solid var(--code-border);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-muted);
-    letter-spacing: 0.08em;
-  }
-
-  .code-dots {
-    display: flex;
-    gap: 5px;
-  }
-
-  .code-dots span {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    display: block;
-  }
-
-  .code-dots span:nth-child(1) { background: #ff5f57; }
-  .code-dots span:nth-child(2) { background: #ffbd2e; }
-  .code-dots span:nth-child(3) { background: #28ca41; }
-
-  pre {
-    padding: 20px 24px;
-    overflow-x: auto;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13.5px;
-    line-height: 1.7;
-  }
-
-  code { color: #a8d8ea; }
-
-  .kw  { color: #ff79c6; }   /* keywords */
-  .cm  { color: #4a5568; font-style: italic; } /* comments */
-  .st  { color: #f1fa8c; }   /* strings */
-  .nm  { color: #50fa7b; }   /* numbers/names */
-  .tp  { color: #8be9fd; }   /* types */
-  .fn  { color: #bd93f9; }   /* functions */
-  .op  { color: #ff6b35; }   /* operators / special */
-
-  /* ── CALLOUTS ── */
-  .callout {
-    display: flex;
-    gap: 16px;
-    padding: 18px 22px;
-    margin: 24px 0;
-    border-radius: 3px;
-    border: 1px solid;
-  }
-
-  .callout.tip {
-    background: var(--tip-bg);
-    border-color: rgba(0, 200, 255, 0.25);
-  }
-
-  .callout.warn {
-    background: var(--warn-bg);
-    border-color: rgba(255, 107, 53, 0.3);
-  }
-
-  .callout.success {
-    background: #0a1a0d;
-    border-color: rgba(127, 255, 107, 0.25);
-  }
-
-  .callout-icon {
-    font-size: 18px;
-    flex-shrink: 0;
-    line-height: 1.6;
-  }
-
-  .callout-body {
-    font-size: 15px;
-    line-height: 1.7;
-  }
-
-  .callout.tip .callout-body { color: #7ecde8; }
-  .callout.warn .callout-body { color: #e8a07e; }
-  .callout.success .callout-body { color: #7ee88a; }
-
-  .callout strong {
-    display: block;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    margin-bottom: 4px;
-  }
-
-  .callout.tip strong { color: var(--accent); }
-  .callout.warn strong { color: var(--accent2); }
-  .callout.success strong { color: var(--accent3); }
-
-  /* ── HIERARCHY DIAGRAM ── */
-  .hierarchy {
-    margin: 24px 0;
-    padding: 24px;
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    line-height: 2;
-  }
-
-  .hierarchy .node { color: var(--text-dim); }
-  .hierarchy .node.root { color: var(--heading); font-weight: 500; }
-  .hierarchy .node.highlight { color: var(--accent); }
-  .hierarchy .node.note {
-    color: var(--text-muted);
-    font-size: 11px;
-    font-style: italic;
-  }
-
-  /* ── BULLET LIST ── */
-  ul.custom {
-    list-style: none;
-    margin: 16px 0 20px;
-    padding: 0;
-  }
-
-  ul.custom li {
-    padding: 6px 0 6px 24px;
-    position: relative;
-    color: var(--text);
-    border-bottom: 1px solid rgba(30,37,48,0.5);
-    font-size: 16px;
-  }
-
-  ul.custom li:last-child { border-bottom: none; }
-
-  ul.custom li::before {
-    content: '▸';
-    position: absolute;
-    left: 0;
-    color: var(--accent);
-    font-size: 11px;
-    top: 9px;
-  }
-
-  /* ── CHECKLIST ── */
-  .checklist {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin: 24px 0;
-  }
-
-  @media (max-width: 600px) { .checklist { grid-template-columns: 1fr; } }
-
-  .check-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 14px 16px;
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    font-size: 14px;
-  }
-
-  .check-item .icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
-  .check-item .label { color: var(--text-dim); line-height: 1.5; font-family: 'Lora', serif; }
-  .check-item .label strong { display: block; color: var(--heading); font-size: 13px; font-family: 'Syne', sans-serif; margin-bottom: 2px; }
-
-  /* ── FOOTER ── */
-  .footer {
-    border-top: 1px solid var(--border);
-    padding: 40px 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: gap;
-    gap: 16px;
-  }
-
-  .footer-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .footer-credit {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  /* ── ANIMATIONS ── */
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(24px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  /* ── SCROLLBAR ── */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: var(--bg); }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-
-  /* ── INLINE CODE ── */
-  p code, li code {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    background: var(--code-bg);
-    border: 1px solid var(--code-border);
-    padding: 1px 6px;
-    border-radius: 2px;
-    color: var(--accent);
-  }
-
-  /* ── DIVIDER ── */
-  .divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--border), transparent);
-    margin: 48px 0;
-  }
+	:root {
+		--bg: #0a0d12;
+		--bg2: #0f1318;
+		--bg3: #141920;
+		--border: #1e2530;
+		--accent: #00c8ff;
+		--accent2: #ff6b35;
+		--accent3: #7fff6b;
+		--text: #d4dce8;
+		--text-muted: #5a6a7e;
+		--text-dim: #8a9ab0;
+		--heading: #eef2f8;
+		--code-bg: #0d1117;
+		--code-border: #1e2d3d;
+		--tip-bg: #0a1a24;
+		--warn-bg: #1a0f0a;
+		--ok-bg: #0a1a0d;
+	}
+
+	* { margin: 0; padding: 0; box-sizing: border-box; }
+	html { scroll-behavior: smooth; }
+
+	body {
+		background: var(--bg);
+		color: var(--text);
+		font-family: 'Lora', Georgia, serif;
+		font-size: 17px;
+		line-height: 1.8;
+		overflow-x: hidden;
+	}
+
+	body::before {
+		content: '';
+		position: fixed;
+		inset: 0;
+		background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+		pointer-events: none;
+		z-index: 0;
+		opacity: 0.4;
+	}
+
+	body::after {
+		content: '';
+		position: fixed;
+		inset: 0;
+		background-image:
+			linear-gradient(rgba(0,200,255,0.025) 1px, transparent 1px),
+			linear-gradient(90deg, rgba(0,200,255,0.025) 1px, transparent 1px);
+		background-size: 60px 60px;
+		pointer-events: none;
+		z-index: 0;
+	}
+
+	.reading-bar {
+		position: fixed;
+		top: 0;
+		left: 0;
+		height: 3px;
+		background: linear-gradient(90deg, var(--accent), var(--accent2));
+		z-index: 100;
+		width: 0%;
+		transition: width 0.1s linear;
+		box-shadow: 0 0 12px var(--accent);
+	}
+
+	.page-wrap {
+		position: relative;
+		z-index: 1;
+		max-width: 1020px;
+		margin: 0 auto;
+		padding: 0 24px;
+	}
+
+	.hero {
+		padding: 76px 0 48px;
+		border-bottom: 1px solid var(--border);
+		animation: fadeUp 0.8s ease both;
+	}
+
+	.hero-tags {
+		display: flex;
+		gap: 10px;
+		flex-wrap: wrap;
+		margin-bottom: 22px;
+	}
+
+	.tag {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		padding: 4px 10px;
+		border: 1px solid var(--border);
+		color: var(--text-muted);
+		border-radius: 2px;
+	}
+
+	.tag.accent { border-color: var(--accent); color: var(--accent); }
+
+	.hero h1 {
+		font-family: 'Syne', sans-serif;
+		font-size: clamp(30px, 5.4vw, 52px);
+		font-weight: 800;
+		color: var(--heading);
+		line-height: 1.08;
+		letter-spacing: -0.02em;
+		margin-bottom: 12px;
+	}
+
+	.hero h1 span { color: var(--accent); display: block; }
+
+	.hero-sub {
+		font-size: 19px;
+		color: var(--text-dim);
+		font-style: italic;
+		margin-bottom: 20px;
+	}
+
+	.hero-meta {
+		display: flex;
+		gap: 18px;
+		flex-wrap: wrap;
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 12px;
+		color: var(--text-muted);
+	}
+
+	.toc {
+		margin: 40px 0;
+		padding: 24px 28px;
+		background: var(--bg2);
+		border: 1px solid var(--border);
+		border-left: 3px solid var(--accent);
+		animation: fadeUp 0.8s 0.1s ease both;
+	}
+
+	.toc-title {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		letter-spacing: 0.15em;
+		text-transform: uppercase;
+		color: var(--accent);
+		margin-bottom: 14px;
+	}
+
+	.toc ol { list-style: none; counter-reset: toc; }
+	.toc li {
+		counter-increment: toc;
+		padding: 6px 0;
+		border-bottom: 1px solid var(--border);
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+	}
+	.toc li:last-child { border-bottom: none; }
+	.toc li::before {
+		content: counter(toc, decimal-leading-zero);
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		color: var(--text-muted);
+		flex-shrink: 0;
+	}
+
+	.toc a {
+		color: var(--text-dim);
+		text-decoration: none;
+		font-size: 15px;
+		font-family: 'Syne', sans-serif;
+		font-weight: 600;
+		transition: color 0.2s;
+	}
+
+	.toc a:hover { color: var(--accent); }
+
+	.article { padding: 20px 0 80px; }
+	.post {
+		margin-bottom: 56px;
+		padding: 26px;
+		background: var(--bg2);
+		border: 1px solid var(--border);
+		animation: fadeUp 0.8s ease both;
+	}
+
+	h2 {
+		font-family: 'Syne', sans-serif;
+		font-size: 28px;
+		font-weight: 800;
+		color: var(--heading);
+		margin-bottom: 12px;
+		padding-bottom: 10px;
+		border-bottom: 1px solid var(--border);
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	h2 .h-num {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 13px;
+		color: var(--accent);
+		opacity: 0.8;
+		font-weight: 400;
+	}
+
+	h3 {
+		font-family: 'Syne', sans-serif;
+		font-size: 18px;
+		font-weight: 700;
+		color: var(--accent2);
+		margin: 24px 0 8px;
+	}
+
+	h4 {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--accent);
+		margin-bottom: 8px;
+	}
+
+	p { margin-bottom: 14px; }
+	strong { color: var(--heading); font-weight: 600; }
+
+	.meta {
+		font-family: 'JetBrains Mono', monospace;
+		color: var(--text-muted);
+		font-size: 12px;
+		margin-bottom: 18px;
+	}
+
+	.star-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 12px;
+		margin: 16px 0 10px;
+	}
+
+	.star-card {
+		border: 1px solid var(--border);
+		background: var(--bg3);
+		padding: 12px;
+	}
+
+	.feature-block {
+		margin: 16px 0;
+		border-left: 3px solid var(--accent2);
+		background: rgba(255,107,53,0.06);
+		border-top: 1px solid var(--border);
+		border-right: 1px solid var(--border);
+		border-bottom: 1px solid var(--border);
+		padding: 14px;
+	}
+
+	.feature-block.green {
+		border-left-color: var(--accent3);
+		background: rgba(127,255,107,0.05);
+	}
+
+	.code-block {
+		margin: 16px 0;
+		background: var(--code-bg);
+		border: 1px solid var(--code-border);
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.code-label {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 8px 14px;
+		background: #0d1520;
+		border-bottom: 1px solid var(--code-border);
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		color: var(--text-muted);
+	}
+
+	pre {
+		padding: 16px;
+		overflow-x: auto;
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 13px;
+		line-height: 1.65;
+	}
+
+	code { color: #a8d8ea; }
+
+	.callout {
+		display: flex;
+		gap: 12px;
+		padding: 14px;
+		border: 1px solid;
+		margin: 14px 0;
+	}
+
+	.callout.tip { background: var(--tip-bg); border-color: rgba(0,200,255,0.25); }
+	.callout.warn { background: var(--warn-bg); border-color: rgba(255,107,53,0.3); }
+	.callout.ok { background: var(--ok-bg); border-color: rgba(127,255,107,0.25); }
+
+	.callout-body {
+		font-size: 15px;
+		line-height: 1.7;
+	}
+
+	.callout strong {
+		display: block;
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 11px;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		margin-bottom: 4px;
+	}
+
+	.callout.tip strong { color: var(--accent); }
+	.callout.warn strong { color: var(--accent2); }
+	.callout.ok strong { color: var(--accent3); }
+
+	.visual {
+		margin: 16px 0;
+		padding: 14px;
+		border: 1px solid var(--border);
+		background: var(--bg3);
+	}
+
+	.placeholder {
+		min-height: 90px;
+		display: grid;
+		place-items: center;
+		text-align: center;
+		color: var(--text-dim);
+		border: 1px dashed var(--border);
+		background: rgba(255,255,255,0.02);
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 12px;
+		padding: 10px;
+	}
+
+	.caption {
+		color: var(--text-muted);
+		margin-top: 6px;
+		font-size: 13px;
+	}
+
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		margin: 14px 0;
+		font-size: 14px;
+	}
+
+	th, td {
+		border: 1px solid var(--border);
+		padding: 8px;
+		text-align: left;
+		vertical-align: top;
+	}
+
+	th { background: #0f1822; color: var(--heading); }
+
+	ul.custom {
+		list-style: none;
+		margin: 10px 0;
+		padding: 0;
+	}
+
+	ul.custom li {
+		padding: 5px 0 5px 18px;
+		border-bottom: 1px solid rgba(30,37,48,0.5);
+		position: relative;
+	}
+
+	ul.custom li::before {
+		content: 'â–¸';
+		position: absolute;
+		left: 0;
+		color: var(--accent);
+		font-size: 11px;
+		top: 8px;
+	}
+
+	.refs {
+		border-top: 1px solid var(--border);
+		margin-top: 16px;
+		padding-top: 12px;
+	}
+
+	.coverage {
+		margin: 20px 0;
+		padding: 18px;
+		border: 1px solid var(--border);
+		background: var(--bg3);
+	}
+
+	.footer {
+		border-top: 1px solid var(--border);
+		padding: 30px 0 44px;
+		font-family: 'JetBrains Mono', monospace;
+		color: var(--text-muted);
+		font-size: 12px;
+	}
+
+	@keyframes fadeUp {
+		from { opacity: 0; transform: translateY(20px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+
+	@media (max-width: 720px) {
+		.page-wrap { padding: 0 14px; }
+		.hero { padding-top: 54px; }
+		.post { padding: 16px; }
+		.hero-meta { gap: 10px; }
+	}
 </style>
 </head>
 <body>
-
 <div class="reading-bar" id="readingBar"></div>
 
 <div class="page-wrap">
-
-  <!-- HERO -->
-  <header class="hero">
-    <div class="hero-tags">
-      <span class="tag accent">Game Development</span>
-      <span class="tag">Unity</span>
-      <span class="tag">Networking</span>
-      <span class="tag">Photon</span>
-    </div>
-    <h1>Voice Chat in Multiplayer Games:<span>Photon Voice 2 + PUN2</span></h1>
-    <p class="hero-sub">A complete integration guide — from setup to spatial audio</p>
-    <div class="hero-meta">
-      <span>By Zeeshan</span>
-      <span class="dot">◆</span>
-      <span>March 2026</span>
-      <span class="dot">◆</span>
-      <span>10 min read</span>
-    </div>
-  </header>
-
-  <!-- TOC -->
-  <nav class="toc">
-    <div class="toc-title">// Table of Contents</div>
-    <ol>
-      <li><a href="#why">Why Photon Voice 2?</a></li>
-      <li><a href="#architecture">Architecture Overview</a></li>
-      <li><a href="#integration">Step-by-Step Integration</a></li>
-      <li><a href="#dragdrop">The Inspector Drag-and-Drop Problem</a></li>
-      <li><a href="#advanced">Advanced Features</a></li>
-      <li><a href="#pitfalls">Common Pitfalls &amp; Checklist</a></li>
-      <li><a href="#conclusion">Conclusion</a></li>
-    </ol>
-  </nav>
+<header class="hero">
+		<div class="hero-tags">
+			<span class="tag accent">Game Development</span>
+			<span class="tag">Unity 6</span>
+			<span class="tag">Photon PUN 2</span>
+			<span class="tag">PlayFab</span>
+			<span class="tag">STAR Timeline</span>
+		</div>
+		<h1>Multiplayer GP Hunt<span>Developer Blog Timeline</span></h1>
+		<p class="hero-sub">A mechanics-first, code-aware blog series written around the actual project scripts, scenes, and gameplay systems.</p>
+		<div class="hero-meta">
+			<span>By Zeeshan</span>
+			<span>Apr 2026 compilation</span>
+			<span>Project-owned scripts only</span>
+			<span>Senior-dev tone</span>
+		</div>
+	</header>
 
   <article class="article">
 
-    <p>Real-time voice communication is one of those features that transforms a multiplayer game from a collection of nameless avatars into a living, breathing social experience. Whether you're calling out enemy positions in a tactical shooter or coordinating a dungeon raid, voice chat creates the kind of spontaneous human connection that text chat simply can't replicate.</p>
-    <p>In this guide, I'll walk through my complete journey integrating Photon Voice 2 into an existing PUN2-based Unity game — from initial setup all the way to spatial audio and push-to-talk. I'll also share the gotchas I ran into (including a frustrating component-linking issue) and exactly how I solved them.</p>
-
-    <!-- SECTION 1 -->
-    <section class="section" id="why">
-      <h2><span class="h-num">01</span> Why Photon Voice 2?</h2>
-      <p>When evaluating voice solutions for Unity multiplayer games, Photon Voice 2 stands out for one key reason: it's built to work natively alongside PUN2. Both SDKs share the same Photon infrastructure, meaning:</p>
-      <ul class="custom">
-        <li>Your players don't connect to a separate voice server — voice traffic travels through the same Photon relay network</li>
-        <li>Room management is synchronized — when a player joins or leaves a PUN room, the voice session follows automatically</li>
-        <li>The App ID setup is unified — you can use the same Photon App ID for both PUN and Voice</li>
-        <li>Latency is minimized through co-located data centers</li>
-      </ul>
-      <p>Alternatives like <strong>Vivox</strong> or <strong>Agora</strong> are powerful but add third-party dependencies and require separate account management. For games already built on PUN2, Photon Voice 2 is the natural, friction-free choice.</p>
-    </section>
-
-    <!-- SECTION 2 -->
-    <section class="section" id="architecture">
-      <h2><span class="h-num">02</span> Architecture Overview</h2>
-      <p>Before diving into code, it helps to understand how Photon Voice 2 fits into the overall networking architecture. There are two parallel but linked connection layers:</p>
-
-      <h3>PUN2 Layer — Game Data</h3>
-      <p>Handles player positions, game state, RPCs, and all gameplay-related network messages. This is the layer you've already built your game on.</p>
-
-      <h3>Voice Layer — Audio Data</h3>
-      <p>Handles microphone capture, audio encoding via the Opus codec, transmission, and playback. This layer runs alongside PUN2 and is managed by a <code>VoiceConnection</code> component.</p>
-
-      <p>The bridge between these two layers is the <code>PunVoiceClient</code> component — a clever piece of Photon's SDK that listens to PUN's room events and mirrors them in the voice layer. It's what makes the two systems feel like one unified system.</p>
-    </section>
-
-    <!-- SECTION 3 -->
-    <section class="section" id="integration">
-      <h2><span class="h-num">03</span> Step-by-Step Integration</h2>
-
-      <h3>1. Import and Configure</h3>
-      <p>After importing Photon Voice 2 from the Asset Store, open your <code>PhotonServerSettings</code> asset. You'll see a new Voice AppId field. You can either reuse your existing PUN AppId (simplest for small projects) or create a separate Voice App in the Photon Dashboard for independent analytics and scaling.</p>
-
-      <h3>2. Set Up the Voice Connection</h3>
-      <p>Add both <code>VoiceConnection</code> and <code>PunVoiceClient</code> to a persistent scene object — your NetworkManager works perfectly for this:</p>
-
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>NetworkManager setup</span>
-        </div>
-        <pre><code><span class="cm">// On your NetworkManager (or dedicated AudioManager) GameObject:</span>
-<span class="cm">// - Add Component: VoiceConnection</span>
-<span class="cm">// - Add Component: PunVoiceClient</span>
-<span class="cm">//</span>
-<span class="cm">// PunVoiceClient automatically:</span>
-<span class="cm">//   ✓ Connects to Voice when PUN connects</span>
-<span class="cm">//   ✓ Joins a Voice room when PUN room is joined</span>
-<span class="cm">//   ✓ Cleans up on disconnect — zero boilerplate</span></code></pre>
-      </div>
-
-      <div class="callout tip">
-        <span class="callout-icon">💡</span>
-        <div class="callout-body">
-          <strong>Pro Tip</strong>
-          Make the AudioManager object <code>DontDestroyOnLoad</code> so voice persists across scene transitions without reconnecting.
-        </div>
-      </div>
-
-      <h3>3. Player Prefab — Recorder + Speaker</h3>
-      <p>The core voice components live on your Player Prefab. One <code>Recorder</code> captures the local player's microphone, while a <code>Speaker</code> on every player object plays incoming audio from that player.</p>
-
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>PlayerVoiceSetup.cs</span>
-        </div>
-        <pre><code><span class="kw">public class</span> <span class="tp">PlayerVoiceSetup</span> : <span class="tp">MonoBehaviour</span>
+<section class="post" id="post4">
+			<h2><span class="h-num">04</span> PlayerControls, PooledProjectile, and Core Combat Loop</h2>
+			<p class="meta">Date: 23 Feb 2026 | Period: 23 Feb to 8 Mar 2026</p>
+			<div class="star-grid"><div class="star-card"><h4>Situation</h4><p>This is the heart of the project. The player script owns movement, role state, animation sync, interaction input, projectile combat, and ability-driven item placement. It is the largest single technical surface in the game.</p></div><div class="star-card"><h4>Task</h4><p>I had to make one component support two distinct roles without turning it into an unreadable monolith. It also had to remain safe over the network and behave differently for local versus remote clients.</p></div><div class="star-card"><h4>Action</h4><p>I split behavior around ownership and role state, used the new input system for deterministic event capture, and treated visual/animation state as replicated outputs rather than primary logic.</p></div><div class="star-card"><h4>Result</h4><p>The player controller now serves as the main gameplay interpreter: it maps input, role, and session state into actual game actions instead of merely moving a capsule.</p></div></div>
+			<div class="feature-block"><h4>Mechanics Delivered</h4><ul class="custom"><li>Ownership-gated movement and camera control.</li><li>Role-specific abilities for priest and ghost.</li><li>Projectile combat using object pooling instead of naive instantiation.</li><li>Animation synchronization for both local and remote players.</li><li>Interaction handling for ash pots, flowers, souls, vines, and blood pools.</li></ul></div>
+			<div class="code-block"><div class="code-label"><span>PlayerControls.cs</span><span>Local authority and animation sync</span></div><pre><code>void Update()
 {
-    [<span class="tp">SerializeField</span>] <span class="kw">private</span> <span class="tp">Recorder</span> recorder;
+		if (photonView.IsMine)
+		{
+				if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+				{
+						TryFireProjectile();
+				}
 
-    <span class="kw">void</span> <span class="fn">Start</span>()
-    {
-        <span class="cm">// Only activate recorder for the local player</span>
-        <span class="kw">if</span> (!photonView.IsMine) { recorder.enabled = <span class="kw">false</span>; <span class="kw">return</span>; }
+				HandleSoulDropInput();
+				HandleVineDropInput();
+				HandleBloodPoolDropInput();
+				ProcessMovement();
+				ProcessTurn();
+		}
 
-        recorder.TransmitEnabled          = <span class="kw">true</span>;
-        recorder.VoiceDetection           = <span class="kw">true</span>;   <span class="cm">// Enable VAD</span>
-        recorder.VoiceDetectionThreshold  = <span class="nm">0.01f</span>;
-        recorder.SamplingRate             = <span class="tp">SamplingRate</span>.Sampling24000;
-        recorder.FrameDuration            = <span class="tp">OpusFrameDuration</span>.Frame20ms;
-    }
-}</code></pre>
-      </div>
-
-      <h3>4. PhotonVoiceView — The Critical Link</h3>
-      <p><code>PhotonVoiceView</code> is the component that ties everything together. It maps a Photon Voice actor to a specific player object across the network. Without it, remote players won't hear audio from the correct source.</p>
-      <p>Your player prefab hierarchy should look exactly like this:</p>
-
-      <div class="hierarchy">
-        <div class="node root">PlayerPrefab (root)</div>
-        <div class="node">├── <span style="color:#8be9fd">PhotonView</span></div>
-        <div class="node highlight">├── PhotonVoiceView   <span class="note">← links voice to the right player</span></div>
-        <div class="node">├── <span style="color:#50fa7b">Recorder</span>          <span class="note">← assign in PhotonVoiceView inspector</span></div>
-        <div class="node">├── <span style="color:#ff79c6">Speaker</span>           <span class="note">← assign in PhotonVoiceView inspector</span></div>
-        <div class="node">└── <span style="color:#f1fa8c">AudioSource</span>       <span class="note">← required by Speaker component</span></div>
-      </div>
-    </section>
-
-    <!-- SECTION 4 -->
-    <section class="section" id="dragdrop">
-      <h2><span class="h-num">04</span> The Inspector Drag-and-Drop Problem</h2>
-      <p>This is the issue that tripped me up — and likely trips up many developers. When you try to drag the <code>Speaker</code> component into the Speaker field of <code>PhotonVoiceView</code> in the Inspector, it simply doesn't work. The field seems to reject the assignment or stays empty.</p>
-      <p>The root cause is usually one of three things:</p>
-      <ul class="custom">
-        <li>The Speaker is on a <strong>child GameObject</strong>, not the root — PhotonVoiceView only looks at the same transform</li>
-        <li>The field is <strong>greyed out</strong> because PhotonVoiceView has auto-linking enabled and manages the reference internally</li>
-        <li>The <strong>AudioSource component is missing</strong> — Speaker requires it on the exact same object</li>
-      </ul>
-
-      <h3>Fix 1: Assign at Runtime via Code (Most Reliable)</h3>
-      <p>Skip Inspector assignment entirely and wire everything up in <code>Awake()</code>:</p>
-
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>VoiceSetup.cs — Awake()</span>
-        </div>
-        <pre><code><span class="kw">void</span> <span class="fn">Awake</span>()
-{
-    <span class="kw">var</span> pvv    = <span class="fn">GetComponent</span>&lt;<span class="tp">PhotonVoiceView</span>&gt;();
-    <span class="kw">var</span> rec    = <span class="fn">GetComponent</span>&lt;<span class="tp">Recorder</span>&gt;();
-    <span class="kw">var</span> spk    = <span class="fn">GetComponent</span>&lt;<span class="tp">Speaker</span>&gt;();
-
-    pvv.RecorderInUse = rec;
-    pvv.SpeakerInUse  = spk;
+		UpdateAnimationSpeed();
 }
 
-<span class="cm">// Verify at runtime</span>
-<span class="kw">void</span> <span class="fn">Start</span>()
+public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info)
 {
-    <span class="kw">var</span> pvv = <span class="fn">GetComponent</span>&lt;<span class="tp">PhotonVoiceView</span>&gt;();
-    <span class="tp">Debug</span>.<span class="fn">Log</span>(<span class="st">"Recorder linked: "</span> + (pvv.RecorderInUse != <span class="kw">null</span>));
-    <span class="tp">Debug</span>.<span class="fn">Log</span>(<span class="st">"Speaker linked:  "</span> + (pvv.SpeakerInUse  != <span class="kw">null</span>));
-}</code></pre>
-      </div>
+		if (stream.IsWriting)
+		{
+				stream.SendNext(targetAnimationSpeed);
+				return;
+		}
 
-      <div class="callout success">
-        <span class="callout-icon">✅</span>
-        <div class="callout-body">
-          <strong>Zero-Code Alternative</strong>
-          Leave both fields completely blank in the Inspector. If <code>Recorder</code>, <code>Speaker</code>, and <code>PhotonVoiceView</code> are all on the same root GameObject, auto-detection handles linking at runtime with no extra code.
-        </div>
-      </div>
-    </section>
-
-    <!-- SECTION 5 -->
-    <section class="section" id="advanced">
-      <h2><span class="h-num">05</span> Advanced Features</h2>
-
-      <h3>Push-to-Talk</h3>
-      <p>For competitive games where ambient noise is a concern, push-to-talk keeps voice channels clean. Just toggle <code>TransmitEnabled</code> based on key input:</p>
-
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>PushToTalk.cs</span>
-        </div>
-        <pre><code><span class="kw">void</span> <span class="fn">Start</span>()  => recorder.TransmitEnabled = <span class="kw">false</span>; <span class="cm">// Start muted</span>
-
-<span class="kw">void</span> <span class="fn">Update</span>()
+		if (stream.Count > 0)
+		{
+				networkedAnimationSpeed = (float)stream.ReceiveNext();
+		}
+}</code></pre></div>
+			<div class="code-block"><div class="code-label"><span>PooledProjectile.cs</span><span>Projectile pooling</span></div><pre><code>public void Launch(Vector3 startPosition, Vector3 targetPosition, float moveSpeed, Action&lt;PooledProjectile&gt; releaseCallback)
 {
-    <span class="kw">if</span> (!photonView.IsMine) <span class="kw">return</span>;
-    recorder.TransmitEnabled = <span class="tp">Input</span>.<span class="fn">GetKey</span>(<span class="tp">KeyCode</span>.V);
-}</code></pre>
-      </div>
-
-      <h3>Spatial / Proximity Audio</h3>
-      <p>For open-world or large map games, spatial audio adds enormous immersion. Players hear each other only when nearby, with volume that falls off naturally with distance. This is achieved through Unity's <code>AudioSource</code> 3D settings — since Speaker plays through the AudioSource on the remote player's GameObject, spatial positioning is automatic:</p>
-
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>ProximityVoice.cs</span>
-        </div>
-        <pre><code><span class="kw">void</span> <span class="fn">Start</span>()
-{
-    <span class="kw">if</span> (photonView.IsMine) <span class="kw">return</span>; <span class="cm">// Only configure remote players</span>
-
-    voiceAudioSource.spatialBlend  = <span class="nm">1.0f</span>;               <span class="cm">// Full 3D</span>
-    voiceAudioSource.maxDistance   = <span class="nm">20f</span>;
-    voiceAudioSource.rolloffMode   = <span class="tp">AudioRolloffMode</span>.Linear;
-    voiceAudioSource.dopplerLevel  = <span class="nm">0f</span>;                  <span class="cm">// Disable doppler</span>
-}</code></pre>
-      </div>
-
-      <h3>Mute / Volume UI Controls</h3>
-
-      <div class="code-block">
-        <div class="code-label">
-          <div class="code-dots"><span></span><span></span><span></span></div>
-          <span>VoiceUIControls.cs</span>
-        </div>
-        <pre><code><span class="kw">public void</span> <span class="fn">OnMuteToggled</span>(<span class="kw">bool</span> isMuted)
-{
-    localRecorder.TransmitEnabled = !isMuted;
+		transform.position = startPosition;
+		_targetPosition = targetPosition;
+		_moveSpeed = Mathf.Max(0.01f, moveSpeed);
+		_releaseCallback = releaseCallback;
+		_isActive = true;
+		gameObject.SetActive(true);
 }
 
-<span class="kw">public void</span> <span class="fn">OnVolumeChanged</span>(<span class="kw">float</span> value)
+private void Update()
 {
-    <span class="tp">AudioListener</span>.volume = value; <span class="cm">// Global or target specific AudioSource</span>
-}</code></pre>
-      </div>
-    </section>
+		if (!_isActive) return;
 
-    <!-- SECTION 6 -->
-    <section class="section" id="pitfalls">
-      <h2><span class="h-num">06</span> Common Pitfalls &amp; Checklist</h2>
+		transform.position = Vector3.MoveTowards(transform.position, _targetPosition, _moveSpeed * Time.deltaTime);
+		if ((transform.position - _targetPosition).sqrMagnitude &lt;= deactivateDistanceThreshold * deactivateDistanceThreshold)
+		{
+				ReleaseToPool();
+		}
+}</code></pre></div>
+			<div class="callout ok"><div class="callout-body"><strong>Why this is solid</strong>I did not let projectile lifetime live inside the weapon logic. The pool object owns its own active/inactive lifecycle, which keeps combat code cleaner and makes it easier to scale shot frequency without GC pressure.</div></div>
+			<div class="visual"><div class="placeholder">Image or clip placeholder: Player movement, camera, and projectile combat</div><div class="caption">Figure 4. The controller as a gameplay interpreter, not just a movement script.</div></div>
+			<table><thead><tr><th>Technical Choice</th><th>Reason</th><th>Benefit</th></tr></thead><tbody><tr><td>InputSystem_Actions in Awake()</td><td>Event-driven input capture</td><td>Cleaner than polling raw axes</td></tr><tr><td>targetAnimationSpeed replication</td><td>Remote animation parity</td><td>Other players read motion correctly</td></tr><tr><td>Object pool for projectiles</td><td>Combat efficiency</td><td>Lower allocation churn</td></tr></tbody></table>
+			<div class="refs"><h4>References</h4><ul class="custom"><li>PlayerControls.cs</li><li>PooledProjectile.cs</li><li>CrosshairUI.cs</li></ul></div>
+		</section>
 
-      <div class="callout warn">
-        <span class="callout-icon">⚠️</span>
-        <div class="callout-body"><strong>Pitfall</strong>Recorder active on remote players — always guard with <code>photonView.IsMine</code> before enabling Recorder. Skipping this causes every player to capture all microphones simultaneously.</div>
-      </div>
-      <div class="callout warn">
-        <span class="callout-icon">⚠️</span>
-        <div class="callout-body"><strong>Pitfall</strong>Missing AudioSource — Speaker requires an AudioSource on the <em>same</em> GameObject to function. This is the silent killer of many setups.</div>
-      </div>
-      <div class="callout warn">
-        <span class="callout-icon">⚠️</span>
-        <div class="callout-body"><strong>Pitfall</strong>Wrong App ID — Voice needs its AppId configured under the Voice application in the Photon Dashboard, not just the Realtime/PUN app.</div>
-      </div>
-      <div class="callout warn">
-        <span class="callout-icon">⚠️</span>
-        <div class="callout-body"><strong>Pitfall</strong>No PunVoiceClient — without this, the voice layer never joins the room automatically. Players will connect to PUN but voice remains silent.</div>
-      </div>
-
-      <p style="margin-top:28px">Here's the final component checklist for your player prefab:</p>
-      <div class="checklist">
-        <div class="check-item"><span class="icon">🔷</span><div class="label"><strong>PhotonView</strong>Core PUN identity — required on all networked objects</div></div>
-        <div class="check-item"><span class="icon">🎙️</span><div class="label"><strong>Recorder</strong>Local player only — capture mic input. Disable for remotes.</div></div>
-        <div class="check-item"><span class="icon">🔗</span><div class="label"><strong>PhotonVoiceView</strong>Links voice actor to PUN player. The critical connector.</div></div>
-        <div class="check-item"><span class="icon">🔊</span><div class="label"><strong>Speaker + AudioSource</strong>Remote players only — plays incoming voice audio.</div></div>
-      </div>
-    </section>
-
-    <div class="divider"></div>
-
-    <!-- CONCLUSION -->
-    <section class="section" id="conclusion">
-      <h2><span class="h-num">07</span> Conclusion</h2>
-      <p>Integrating Photon Voice 2 with PUN2 is well worth the investment. Once the component hierarchy clicks — <code>VoiceConnection</code> and <code>PunVoiceClient</code> on the manager, <code>Recorder</code>, <code>Speaker</code>, <code>AudioSource</code>, and <code>PhotonVoiceView</code> on the player prefab — the system is remarkably solid and low-maintenance.</p>
-      <p>The key insight that unlocked everything for me was understanding that <code>PhotonVoiceView</code> is the glue between the two systems, and that if Inspector assignment fails, code-based wiring in <code>Awake()</code> is both simpler and more reliable.</p>
-      <p>From here, you can layer in push-to-talk, team-based channels, spatial audio, and mute controls — all building on the same foundation. Happy building!</p>
-    </section>
-
-    <!-- FOOTER -->
-    <footer class="footer">
-      <div class="footer-tags">
-        <span class="tag">Unity</span>
-        <span class="tag">Photon</span>
-        <span class="tag">PUN2</span>
-        <span class="tag">Voice Chat</span>
-        <span class="tag">Multiplayer</span>
-      </div>
-      <div class="footer-credit">Written by Zeeshan · March 2026</div>
-    </footer>
+<footer class="footer">Multiplayer GP Hunt Â· Developer timeline blog Â· STAR format Â· mechanics-focused and code-grounded</footer>
 
   </article>
 </div>
 
 <script>
-  // Reading progress bar
   const bar = document.getElementById('readingBar');
   window.addEventListener('scroll', () => {
     const doc = document.documentElement;
     const scrolled = doc.scrollTop;
     const total = doc.scrollHeight - doc.clientHeight;
-    bar.style.width = (scrolled / total * 100) + '%';
+    bar.style.width = total > 0 ? (scrolled / total * 100) + '%' : '0%';
   });
 </script>
 

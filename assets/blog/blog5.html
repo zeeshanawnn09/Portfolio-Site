@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>02 LobbyMenu, RoomPanel, and Session Entry | Multiplayer GP Hunt</title>
+<title>05 HealthSystem, ShieldSystem, DamageOnContact, and Respawn Flow | Multiplayer GP Hunt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <style>
@@ -447,49 +447,78 @@
 
   <article class="article">
 
-<section class="post" id="post2">
-			<h2><span class="h-num">02</span> LobbyMenu, RoomPanel, and Session Entry</h2>
-			<p class="meta">Date: 26 Jan 2026 | Period: 26 Jan to 8 Feb 2026</p>
-			<div class="star-grid"><div class="star-card"><h4>Situation</h4><p>Once authentication was stable, the next issue was that room browsing behaved like a thin demo rather than a production lobby. Room churn, stale state, and hidden network status all made testing noisy.</p></div><div class="star-card"><h4>Task</h4><p>I needed to turn the lobby into a truthful state view: connect to Photon, join the lobby, reconcile room list updates, and expose room entry actions only when the client was actually ready.</p></div><div class="star-card"><h4>Action</h4><p>I used Photon callbacks as the source of truth and rebuilt the UI as a reconciliation layer. RoomPanel became a small command object: it stores a room name and delegates to PhotonNetwork.JoinRoom.</p></div><div class="star-card"><h4>Result</h4><p>The lobby became predictable and testable. More importantly, room entry is now guided by state rather than by ad hoc button behavior.</p></div></div>
-			<div class="feature-block"><h4>Mechanics Delivered</h4><ul class="custom"><li>Room discovery mechanic with live occupancy display.</li><li>Create/join mechanic guarded by connection and readiness checks.</li><li>Master-client connect button gating for match start control.</li><li>Debug telemetry mechanic through connection, region, and player count text.</li></ul></div>
-			<div class="code-block"><div class="code-label"><span>LobbyMenu.cs</span><span>Room list and session gating</span></div><pre><code>public override void OnRoomListUpdate(List&lt;RoomInfo&gt; roomList)
+<section class="post" id="post5">
+			<h2><span class="h-num">05</span> HealthSystem, ShieldSystem, DamageOnContact, and Respawn Flow</h2>
+			<p class="meta">Date: 9 Mar 2026 | Period: 9 Mar to 22 Mar 2026</p>
+			<div class="star-grid"><div class="star-card"><h4>Situation</h4><p>Combat needed consequences. Without health, shields, traps, and respawn logic, the gameplay loop would just be movement and pickups. This post is where failure becomes part of play.</p></div><div class="star-card"><h4>Task</h4><p>I had to make damage authoritative, shield behavior role-locked, and respawn behavior different for ghost and priest roles while still being network-safe.</p></div><div class="star-card"><h4>Action</h4><p>I used local ownership to gate health mutation, kept damage sources simple and reusable, and moved respawn decisions into explicit systems rather than embedding them in generic death callbacks.</p></div><div class="star-card"><h4>Result</h4><p>The game now has a credible fail-state loop: players take damage, shields can absorb it, traps can immobilize priests, and deaths trigger role-specific recovery.</p></div></div>
+			<div class="feature-block"><h4>Mechanics Delivered</h4><ul class="custom"><li>Health mutation restricted to local ownership.</li><li>Priest-only shield activation with duration and cooldown.</li><li>Contact damage with per-player hit intervals to avoid frame-spam damage.</li><li>Immobilize trap with overlap fallback to catch CharacterController edge cases.</li><li>Respawn surface resolution from tagged platforms or bounds.</li></ul></div>
+			<div class="code-block"><div class="code-label"><span>HealthSystem.cs</span><span>Damage and death state</span></div><pre><code>public void ApplyDamage(int amount)
 {
-		roomsInfo = roomList;
-		UpdateDisplayedRooms();
-}
+		if (amount &lt;= 0) return;
+		if (!photonView.IsMine || _isDead) return;
 
-public void NewRoom()
-{
-		string inputName = iFNewRoom.text;
-		if (inputName != "")
+		ShieldSystem shieldSystem = GetComponent&lt;ShieldSystem&gt;();
+		if (shieldSystem != null && shieldSystem.IsShieldActive)
 		{
-				if (!PhotonNetwork.IsConnectedAndReady)
-				{
-						statusText.text = "Connection status: Not connected";
-						return;
-				}
+				return;
+		}
 
-				RoomOptions roomOptions = new RoomOptions();
-				roomOptions.IsOpen = true;
-				roomOptions.IsVisible = true;
-				roomOptions.MaxPlayers = (byte)4;
-
-				PhotonNetwork.JoinOrCreateRoom(inputName, roomOptions, TypedLobby.Default);
+		CurrentHealth = Mathf.Max(0, CurrentHealth - amount);
+		if (CurrentHealth == 0)
+		{
+				_isDead = true;
+				photonView.RPC(nameof(RPC_SetPlayerDeadState), RpcTarget.All, true);
 		}
 }</code></pre></div>
-			<div class="callout warn"><div class="callout-body"><strong>Tradeoff</strong>I did not over-engineer lobby UI with reactive bindings. The current approach is intentionally simple because room list updates are already event-driven through Photon and the main risk is state mismatch, not view complexity.</div></div>
-			<div class="visual"><div class="placeholder">Image placeholder: Lobby room list and connection region UI</div><div class="caption">Figure 2. Lobby state exposed directly to the player instead of hidden behind abstraction.</div></div>
-			<div class="code-block"><div class="code-label"><span>RoomPanel.cs</span><span>Room entry command</span></div><pre><code>public void SetRoomName(string name)
+			<div class="code-block"><div class="code-label"><span>ShieldSystem.cs</span><span>Priest shield state</span></div><pre><code>private void Update()
 {
-		roomName = name;
-}
+		if (!photonView.IsMine) return;
 
-public void Join()
-{
-		PhotonNetwork.JoinRoom(roomName);
+		bool wasPressed = Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame;
+		if (!wasPressed) return;
+
+		if (!CanUseShield()) return;
+		TryActivateShield();
 }</code></pre></div>
-			<table><thead><tr><th>Lobby Concern</th><th>Implementation Choice</th><th>Why it is senior-code-ish</th></tr></thead><tbody><tr><td>Stale room list entries</td><td>Callback-driven reconciliation</td><td>State is pulled from Photon, not guessed</td></tr><tr><td>Room join spam</td><td>Readiness gating</td><td>Preconditions are explicit</td></tr><tr><td>Match start confusion</td><td>Player count and master-client gating</td><td>Authority is visible in UI</td></tr></tbody></table>
-			<div class="refs"><h4>References</h4><ul class="custom"><li>Photon PUN lobby callbacks</li><li>RoomPanel prefab</li><li>LobbyScene scene objects</li></ul></div>
+			<div class="code-block"><div class="code-label"><span>DamageOnContact.cs</span><span>Interval-based hazard</span></div><pre><code>private void TryApplyDamage(GameObject otherObject, bool forceFirstTick)
+{
+		if (!otherObject.CompareTag("Player")) return;
+
+		HealthSystem healthSystem = otherObject.GetComponentInParent&lt;HealthSystem&gt;();
+		if (healthSystem == null) return;
+
+		int playerId = healthSystem.gameObject.GetInstanceID();
+		float now = Time.time;
+
+		if (forceFirstTick || ShouldDamagePlayer(playerId, now))
+		{
+				healthSystem.ApplyDamage(damageAmount);
+				_nextDamageTimeByPlayer[playerId] = now + Mathf.Max(0.05f, damageInterval);
+		}
+}</code></pre></div>
+			<div class="callout warn"><div class="callout-body"><strong>Risk I handled</strong>CharacterController setups can miss trigger callbacks. That is why the trap uses overlap checks as a fallback instead of trusting only enter/stay events.</div></div>
+			<div class="code-block"><div class="code-label"><span>PriestRespawnPoint.cs + PlayerRespawnSystem.cs</span><span>Recovery path</span></div><pre><code>public bool TryGetRespawnPosition(out Vector3 respawnPosition)
+{
+		ResolveRespawnPlatform();
+
+		if (respawnPlatform == null)
+		{
+				respawnPosition = transform.position;
+				return false;
+		}
+
+		if (TryGetPlatformSurface(respawnPlatform, out Vector3 surfaceCenter, out float surfaceTopY))
+		{
+				respawnPosition = new Vector3(surfaceCenter.x, surfaceTopY + respawnSurfacePadding, surfaceCenter.z);
+				return true;
+		}
+
+		respawnPosition = respawnPlatform.position + Vector3.up * respawnSurfacePadding;
+		return true;
+}</code></pre></div>
+			<div class="visual"><div class="placeholder">Image placeholder: Shield activation, damage feedback, priest respawn prompt</div><div class="caption">Figure 5. Failure and recovery are now part of the game loop, not special cases.</div></div>
+			<table><thead><tr><th>System</th><th>Role in gameplay</th><th>Architecture note</th></tr></thead><tbody><tr><td>HealthSystem</td><td>Single source of truth for damage and death state</td><td>Ownership checks prevent cross-client health corruption</td></tr><tr><td>ShieldSystem</td><td>Priest defense mechanic</td><td>Uses RPC to mirror state cleanly</td></tr><tr><td>ImmobilizeOnContact</td><td>Trap mechanic</td><td>Overlap fallback improves reliability</td></tr></tbody></table>
+			<div class="refs"><h4>References</h4><ul class="custom"><li>HealthSystem.cs</li><li>ShieldSystem.cs</li><li>DamageOnContact.cs</li><li>ImmobilizeOnContact.cs</li><li>PriestRespawnPoint.cs</li><li>PlayerRespawnSystem.cs</li></ul></div>
 		</section>
 
 <footer class="footer">Multiplayer GP Hunt Â· Developer timeline blog Â· STAR format Â· mechanics-focused and code-grounded</footer>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>02 LobbyMenu, RoomPanel, and Session Entry | Multiplayer GP Hunt</title>
+<title>07 LampProgressManager, LitLampBehavior, and RitualSystem | Multiplayer GP Hunt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <style>
@@ -447,49 +447,70 @@
 
   <article class="article">
 
-<section class="post" id="post2">
-			<h2><span class="h-num">02</span> LobbyMenu, RoomPanel, and Session Entry</h2>
-			<p class="meta">Date: 26 Jan 2026 | Period: 26 Jan to 8 Feb 2026</p>
-			<div class="star-grid"><div class="star-card"><h4>Situation</h4><p>Once authentication was stable, the next issue was that room browsing behaved like a thin demo rather than a production lobby. Room churn, stale state, and hidden network status all made testing noisy.</p></div><div class="star-card"><h4>Task</h4><p>I needed to turn the lobby into a truthful state view: connect to Photon, join the lobby, reconcile room list updates, and expose room entry actions only when the client was actually ready.</p></div><div class="star-card"><h4>Action</h4><p>I used Photon callbacks as the source of truth and rebuilt the UI as a reconciliation layer. RoomPanel became a small command object: it stores a room name and delegates to PhotonNetwork.JoinRoom.</p></div><div class="star-card"><h4>Result</h4><p>The lobby became predictable and testable. More importantly, room entry is now guided by state rather than by ad hoc button behavior.</p></div></div>
-			<div class="feature-block"><h4>Mechanics Delivered</h4><ul class="custom"><li>Room discovery mechanic with live occupancy display.</li><li>Create/join mechanic guarded by connection and readiness checks.</li><li>Master-client connect button gating for match start control.</li><li>Debug telemetry mechanic through connection, region, and player count text.</li></ul></div>
-			<div class="code-block"><div class="code-label"><span>LobbyMenu.cs</span><span>Room list and session gating</span></div><pre><code>public override void OnRoomListUpdate(List&lt;RoomInfo&gt; roomList)
+<section class="post" id="post7">
+			<h2><span class="h-num">07</span> LampProgressManager, LitLampBehavior, and RitualSystem</h2>
+			<p class="meta">Date: 6 Apr 2026 | Period: 6 Apr to 19 Apr 2026</p>
+			<div class="star-grid"><div class="star-card"><h4>Situation</h4><p>To finish the game loop, I needed a true objective machine. The ritual sequence is the point where scattered actions become a directed progression with gating, staging, and synchronized visibility.</p></div><div class="star-card"><h4>Task</h4><p>I owned the lamp-progress meta-objective, the interactable lamp behavior, and the ritual state machine that turns lamp count into objective visibility and door access.</p></div><div class="star-card"><h4>Action</h4><p>I used room properties as shared truth, made the master client own visibility and threshold changes, and wrote objective phases as explicit states instead of one large branching blob.</p></div><div class="star-card"><h4>Result</h4><p>The game now has a clear progression curve: lamps unlock ritual access, bells and side tasks sequence the phase, and the shrine offering creates a final escalation.</p></div></div>
+			<div class="feature-block"><h4>Mechanics Delivered</h4><ul class="custom"><li>Lamp progress mechanic synced across the room via custom properties.</li><li>Interactable lamp mechanic with local prompt and master-client state replication.</li><li>Ritual door mechanic driven by threshold state rather than a direct button press.</li><li>Bell, secondary interaction, and shrine offering phases that escalate over time.</li></ul></div>
+			<div class="code-block"><div class="code-label"><span>LampProgressManager.cs</span><span>Room progress threshold</span></div><pre><code>public override void OnRoomPropertiesUpdate(Hashtable propertiesThatChanged)
 {
-		roomsInfo = roomList;
-		UpdateDisplayedRooms();
+		if (propertiesThatChanged.TryGetValue(LitLampCountKey, out object litLampCountObj) && litLampCountObj is int litLampCount)
+		{
+				ApplyLitLampCount(litLampCount);
+		}
 }
 
-public void NewRoom()
+private void ApplyLitLampCount(int litLampCount)
 {
-		string inputName = iFNewRoom.text;
-		if (inputName != "")
+		_currentLitLamps = Mathf.Clamp(litLampCount, 0, totalLamps);
+		if (!_ritualDoorLogged && _currentLitLamps &gt;= lampsNeededToOpenDoor)
 		{
-				if (!PhotonNetwork.IsConnectedAndReady)
-				{
-						statusText.text = "Connection status: Not connected";
-						return;
-				}
-
-				RoomOptions roomOptions = new RoomOptions();
-				roomOptions.IsOpen = true;
-				roomOptions.IsVisible = true;
-				roomOptions.MaxPlayers = (byte)4;
-
-				PhotonNetwork.JoinOrCreateRoom(inputName, roomOptions, TypedLobby.Default);
+				_ritualDoorLogged = true;
+				Debug.Log($"Ritual door has opened ({_currentLitLamps}/{totalLamps} lamps lit)");
 		}
 }</code></pre></div>
-			<div class="callout warn"><div class="callout-body"><strong>Tradeoff</strong>I did not over-engineer lobby UI with reactive bindings. The current approach is intentionally simple because room list updates are already event-driven through Photon and the main risk is state mismatch, not view complexity.</div></div>
-			<div class="visual"><div class="placeholder">Image placeholder: Lobby room list and connection region UI</div><div class="caption">Figure 2. Lobby state exposed directly to the player instead of hidden behind abstraction.</div></div>
-			<div class="code-block"><div class="code-label"><span>RoomPanel.cs</span><span>Room entry command</span></div><pre><code>public void SetRoomName(string name)
+			<div class="code-block"><div class="code-label"><span>LitLampBehavior.cs</span><span>Interactable lamp state</span></div><pre><code>private void Update()
 {
-		roomName = name;
+		if (_localPlayerInRange == null) return;
+
+		if (_localPlayerInRange.ConsumeInteractPressed())
+		{
+				bool targetLitState = !GetCurrentLitState();
+
+				if (PhotonNetwork.InRoom && _photonView != null && _photonView.ViewID != 0)
+				{
+						_photonView.RPC(nameof(RPC_RequestLightLamp), RpcTarget.MasterClient, targetLitState);
+				}
+		}
 }
 
-public void Join()
+[PunRPC]
+private void RPC_SetLampLitState(bool isLit)
 {
-		PhotonNetwork.JoinRoom(roomName);
+		_isLit = isLit;
+		ApplyLightState(_isLit);
 }</code></pre></div>
-			<table><thead><tr><th>Lobby Concern</th><th>Implementation Choice</th><th>Why it is senior-code-ish</th></tr></thead><tbody><tr><td>Stale room list entries</td><td>Callback-driven reconciliation</td><td>State is pulled from Photon, not guessed</td></tr><tr><td>Room join spam</td><td>Readiness gating</td><td>Preconditions are explicit</td></tr><tr><td>Match start confusion</td><td>Player count and master-client gating</td><td>Authority is visible in UI</td></tr></tbody></table>
-			<div class="refs"><h4>References</h4><ul class="custom"><li>Photon PUN lobby callbacks</li><li>RoomPanel prefab</li><li>LobbyScene scene objects</li></ul></div>
+			<div class="code-block"><div class="code-label"><span>RitualSystem.cs</span><span>Objective sequencing</span></div><pre><code>private void Update()
+{
+		UpdateRitualDoorStateFromLampProgress();
+
+		if (PhotonNetwork.IsMasterClient && PhotonNetwork.InRoom)
+		{
+				EvaluateOfferingTimeoutFromMaster();
+				EvaluateObjectiveVisibilityFromMaster();
+		}
+
+		if (_isBellVisible && _isBellInteractable)
+		{
+				SetPromptVisible(true, $"Hold E to ring bell ({_completedRings}/{totalRingsRequired})");
+				HandleBellInput();
+				return;
+		}
+}</code></pre></div>
+			<div class="callout ok"><div class="callout-body"><strong>Why this matters</strong>I treated ritual progression as a state machine, not a bag of triggers. That makes it possible to reason about gating, timeout, and objective unlocking in a way another engineer could actually maintain.</div></div>
+			<div class="visual"><div class="placeholder">Image placeholder: Lamps lit, ritual door open, bell / shrine prompts</div><div class="caption">Figure 7. Shared progress controls the actual pacing of the match.</div></div>
+			<table><thead><tr><th>State</th><th>Shared source of truth</th><th>Effect on players</th></tr></thead><tbody><tr><td>Lamp count threshold</td><td>Photon room custom properties</td><td>Opens ritual access</td></tr><tr><td>Bell objective</td><td>Master-client phase logic</td><td>Starts the ritual chain</td></tr><tr><td>Flower offering</td><td>Shared flower count</td><td>Consumes team resources to unlock the next phase</td></tr></tbody></table>
+			<div class="refs"><h4>References</h4><ul class="custom"><li>LampProgressManager.cs</li><li>LitLampBehavior.cs</li><li>RitualSystem.cs</li></ul></div>
 		</section>
 
 <footer class="footer">Multiplayer GP Hunt Â· Developer timeline blog Â· STAR format Â· mechanics-focused and code-grounded</footer>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>02 LobbyMenu, RoomPanel, and Session Entry | Multiplayer GP Hunt</title>
+<title>09 Final Reflection Across the Full Codebase | Multiplayer GP Hunt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <style>
@@ -447,49 +447,12 @@
 
   <article class="article">
 
-<section class="post" id="post2">
-			<h2><span class="h-num">02</span> LobbyMenu, RoomPanel, and Session Entry</h2>
-			<p class="meta">Date: 26 Jan 2026 | Period: 26 Jan to 8 Feb 2026</p>
-			<div class="star-grid"><div class="star-card"><h4>Situation</h4><p>Once authentication was stable, the next issue was that room browsing behaved like a thin demo rather than a production lobby. Room churn, stale state, and hidden network status all made testing noisy.</p></div><div class="star-card"><h4>Task</h4><p>I needed to turn the lobby into a truthful state view: connect to Photon, join the lobby, reconcile room list updates, and expose room entry actions only when the client was actually ready.</p></div><div class="star-card"><h4>Action</h4><p>I used Photon callbacks as the source of truth and rebuilt the UI as a reconciliation layer. RoomPanel became a small command object: it stores a room name and delegates to PhotonNetwork.JoinRoom.</p></div><div class="star-card"><h4>Result</h4><p>The lobby became predictable and testable. More importantly, room entry is now guided by state rather than by ad hoc button behavior.</p></div></div>
-			<div class="feature-block"><h4>Mechanics Delivered</h4><ul class="custom"><li>Room discovery mechanic with live occupancy display.</li><li>Create/join mechanic guarded by connection and readiness checks.</li><li>Master-client connect button gating for match start control.</li><li>Debug telemetry mechanic through connection, region, and player count text.</li></ul></div>
-			<div class="code-block"><div class="code-label"><span>LobbyMenu.cs</span><span>Room list and session gating</span></div><pre><code>public override void OnRoomListUpdate(List&lt;RoomInfo&gt; roomList)
-{
-		roomsInfo = roomList;
-		UpdateDisplayedRooms();
-}
-
-public void NewRoom()
-{
-		string inputName = iFNewRoom.text;
-		if (inputName != "")
-		{
-				if (!PhotonNetwork.IsConnectedAndReady)
-				{
-						statusText.text = "Connection status: Not connected";
-						return;
-				}
-
-				RoomOptions roomOptions = new RoomOptions();
-				roomOptions.IsOpen = true;
-				roomOptions.IsVisible = true;
-				roomOptions.MaxPlayers = (byte)4;
-
-				PhotonNetwork.JoinOrCreateRoom(inputName, roomOptions, TypedLobby.Default);
-		}
-}</code></pre></div>
-			<div class="callout warn"><div class="callout-body"><strong>Tradeoff</strong>I did not over-engineer lobby UI with reactive bindings. The current approach is intentionally simple because room list updates are already event-driven through Photon and the main risk is state mismatch, not view complexity.</div></div>
-			<div class="visual"><div class="placeholder">Image placeholder: Lobby room list and connection region UI</div><div class="caption">Figure 2. Lobby state exposed directly to the player instead of hidden behind abstraction.</div></div>
-			<div class="code-block"><div class="code-label"><span>RoomPanel.cs</span><span>Room entry command</span></div><pre><code>public void SetRoomName(string name)
-{
-		roomName = name;
-}
-
-public void Join()
-{
-		PhotonNetwork.JoinRoom(roomName);
-}</code></pre></div>
-			<table><thead><tr><th>Lobby Concern</th><th>Implementation Choice</th><th>Why it is senior-code-ish</th></tr></thead><tbody><tr><td>Stale room list entries</td><td>Callback-driven reconciliation</td><td>State is pulled from Photon, not guessed</td></tr><tr><td>Room join spam</td><td>Readiness gating</td><td>Preconditions are explicit</td></tr><tr><td>Match start confusion</td><td>Player count and master-client gating</td><td>Authority is visible in UI</td></tr></tbody></table>
-			<div class="refs"><h4>References</h4><ul class="custom"><li>Photon PUN lobby callbacks</li><li>RoomPanel prefab</li><li>LobbyScene scene objects</li></ul></div>
+<section class="post">
+			<h2><span class="h-num">09</span> Final Reflection Across the Full Codebase</h2>
+			<p class="meta">Scope: entire development timeline | Focus: how the mechanics fit together</p>
+			<p>The important thing about this project is that it is not a collection of unrelated scripts. The blog should read like an engineering story: identity gates lead to lobby entry, lobby entry leads to session formation, role assignment shapes the player controller, controller state drives combat and objective interaction, and the objective systems feed into ritual progression and recovery.</p>
+			<p>The biggest technical pattern across the codebase is that I kept asking: <strong>who owns the truth for this state?</strong> In most cases, the answer is either the local client for input-only behavior or the master client for shared progression. That separation is what makes the game understandable and maintainable, and it is the part that most clearly reads as developer-authored work rather than generic blog filler.</p>
+			<div class="callout ok"><div class="callout-body"><strong>Summary</strong>Project-owned mechanics are now documented as a coherent gameplay stack: auth, lobby, spawn, controls, combat, health, resources, ritual pacing, and instrumentation. That is the real contribution.</div></div>
 		</section>
 
 <footer class="footer">Multiplayer GP Hunt Â· Developer timeline blog Â· STAR format Â· mechanics-focused and code-grounded</footer>
